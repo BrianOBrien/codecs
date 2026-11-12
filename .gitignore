@@ -4,3 +4,4 @@ c/gtcopy
 tests/*/out/
 xojo/Builds*
 *.xojo_uistate
+c/giftool

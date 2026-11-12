@@ -252,3 +252,193 @@ fail:
     free(bs.out);
     return NULL;
 }
+
+/* ---------- GIF flavour ----------
+ * Decoder: the loop of Brian's lzw_decompress::read (Readgif, 1999); encoder: lzw::write and
+ * bitstream::write (Writegif, 1998-99), whose rules are kept: the width grows in put() when the
+ * table has passed 2^n entries, and a Clear is sent when it reaches 4096. */
+
+long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *out, size_t outlen)
+{
+    static code    table[LZW_TABLE];
+    static uint8_t stack[LZW_TABLE];
+    size_t pos = 0, nout = 0;
+    uint32_t accume = 0;
+    int bitsInAccume = 0, i;
+    int clearCode, eofCode, nEntries, codeSize, old_code = -1, new_code;
+    uint8_t C = 0;
+
+    if (minCodeSize < 2 || minCodeSize > 8)
+        return -1;
+    clearCode = 1 << minCodeSize;
+    eofCode = clearCode + 1;
+    nEntries = clearCode + 2;
+    codeSize = minCodeSize + 1;
+    for (i = 0; i < clearCode; ++i)
+    {
+        table[i].prefix = -1;
+        table[i].c = (uint8_t) i;
+    }
+
+    for (;;)
+    {
+        int stackptr = -1, s;
+        while (bitsInAccume < codeSize)          /* least significant bit first, as bsread::read */
+        {
+            if (pos >= inlen)
+                return (long) nout;              /* ran out: many files end without EOI */
+            accume |= (uint32_t) in[pos++] << bitsInAccume;
+            bitsInAccume += 8;
+        }
+        new_code = (int) (accume & ((1u << codeSize) - 1));
+        accume >>= codeSize;
+        bitsInAccume -= codeSize;
+
+        if (new_code == eofCode)
+            break;
+        if (new_code == clearCode)
+        {
+            nEntries = clearCode + 2;
+            codeSize = minCodeSize + 1;
+            old_code = -1;
+            continue;
+        }
+        if (old_code == -1)
+        {
+            if (new_code >= clearCode)
+                return -1;
+            if (nout < outlen)
+                out[nout++] = (uint8_t) new_code;
+            C = (uint8_t) new_code;
+            old_code = new_code;
+            continue;
+        }
+        if (new_code < nEntries)
+            s = new_code;
+        else if (new_code == nEntries)
+        {
+            stack[++stackptr] = C;
+            s = old_code;
+        }
+        else
+            return -1;
+        while (s != -1)
+        {
+            if (stackptr >= LZW_TABLE - 1)
+                return -1;
+            stack[++stackptr] = table[s].c;
+            s = table[s].prefix;
+        }
+        C = stack[stackptr];
+        while (stackptr >= 0)
+        {
+            if (nout < outlen)
+                out[nout++] = stack[stackptr];
+            stackptr--;
+        }
+        if (nEntries < LZW_TABLE)                /* addcode(old_code, C) */
+        {
+            table[nEntries].prefix = (int16_t) old_code;
+            table[nEntries].c = C;
+            nEntries++;
+            if (nEntries + 1 > (1 << codeSize) && codeSize < LZW_MAXBITS)
+                codeSize++;
+        }
+        old_code = new_code;
+    }
+    return (long) nout;
+}
+
+/* LSB-first bit writer: bitstream::write without the sub-blocks */
+static int gbs_write(bitstream *bs, int code, int nbits)
+{
+    bs->accume |= (uint32_t) code << bs->bitsInAccume;
+    bs->bitsInAccume += nbits;
+    while (bs->bitsInAccume >= 8)
+    {
+        if (bs->n >= bs->cap)
+        {
+            uint8_t *p = realloc(bs->out, bs->cap * 2);
+            if (!p)
+                return 0;
+            bs->out = p;
+            bs->cap *= 2;
+        }
+        bs->out[bs->n++] = (uint8_t) bs->accume;
+        bs->accume >>= 8;
+        bs->bitsInAccume -= 8;
+    }
+    return 1;
+}
+
+uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen)
+{
+    static int32_t htab[HSIZE];
+    static int16_t codetab[HSIZE];
+    bitstream bs;
+    int clearCode = 1 << minCodeSize, eofCode = clearCode + 1;
+    int nEntries = clearCode + 2, codeSize = minCodeSize + 1, prefix = -1, i;
+    size_t k;
+
+    if (minCodeSize < 2 || minCodeSize > 8)
+        return NULL;
+    bs.cap = inlen / 2 + 64;
+    bs.out = malloc(bs.cap);
+    bs.n = 0;
+    bs.accume = 0;
+    bs.bitsInAccume = 0;
+    if (!bs.out)
+        return NULL;
+    for (i = 0; i < HSIZE; ++i)
+        htab[i] = -1;
+
+#define PUT(cd) do { if (nEntries > (1 << codeSize)) ++codeSize; if (!gbs_write(&bs, (cd), codeSize)) goto fail; } while (0)
+    if (!gbs_write(&bs, clearCode, codeSize))    /* the constructor's put(clearCode) */
+        goto fail;
+    for (k = 0; k < inlen; ++k)
+    {
+        int c = in[k] & (clearCode - 1), h;
+        int32_t key;
+        if (prefix == -1)                         /* current.prefix == -1: c is a root */
+        {
+            prefix = c;
+            continue;
+        }
+        key = (int32_t) c << 12 | prefix;
+        h = (int) (((uint32_t) c << 8 ^ (uint32_t) prefix) % HSIZE);
+        while (htab[h] != -1 && htab[h] != key)
+            h = (h + 1) % HSIZE;
+        if (htab[h] == key)
+        {
+            prefix = codetab[h];                  /* in the table: P = Pc */
+            continue;
+        }
+        PUT(prefix);                              /* put(current.prefix) */
+        if (nEntries == LZW_TABLE)                /* table full: Clear and start again */
+        {
+            PUT(clearCode);
+            for (i = 0; i < HSIZE; ++i)
+                htab[i] = -1;
+            nEntries = clearCode + 2;
+            codeSize = minCodeSize + 1;
+        }
+        else
+        {
+            htab[h] = key;
+            codetab[h] = (int16_t) nEntries++;
+        }
+        prefix = c;
+    }
+    if (prefix != -1)
+        PUT(prefix);                              /* the destructor: flush the current string */
+    PUT(eofCode);                                 /* and the end code */
+#undef PUT
+    if (bs.bitsInAccume > 0)
+        if (!gbs_write(&bs, 0, 8 - bs.bitsInAccume))
+            goto fail;
+    *outlen = bs.n;
+    return bs.out;
+fail:
+    free(bs.out);
+    return NULL;
+}

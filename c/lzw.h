@@ -26,4 +26,16 @@ long lzw_tiff_decode(const uint8_t *in, size_t inlen, uint8_t *out, size_t outle
  * change, Clear when the table reaches 4094, EndOfInformation last. */
 uint8_t *lzw_tiff_encode(const uint8_t *in, size_t inlen, size_t *outlen);
 
+
+/* ---------- GIF flavour (Brian's 1998 Readgif/Writegif LZW) ----------
+ * Codes are packed least significant bit first; the width grows when the table reaches 2^n
+ * (no early change); roots are 2^minCodeSize, Clear = 2^m, EndOfInformation = 2^m + 1.
+ * These work on the code bytes alone: the 255-byte sub-blocks are removed / added by gif.c. */
+
+/* Decode GIF LZW codes. Returns the bytes written to out (at most outlen), or -1 on corrupt data. */
+long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *out, size_t outlen);
+
+/* Encode pixel indices (each < 2^minCodeSize) as GIF LZW codes. Returns a malloc'd buffer. */
+uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen);
+
 #endif

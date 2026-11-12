@@ -22,7 +22,7 @@ in their own repos and copy in, or link to, only the Xojo folders they need.
 | Deflate | `c/inflate.c` | `xojo/InflateCodec` | decode |
 | PackBits | in `c/geotiff.c`, `c/gtwrite.c` | `xojo/PackBitsCodec` | decode + encode |
 | TIFF / GeoTIFF | `c/geotiff.c`, `c/gtwrite.c` | `xojo/TIFFCodec` | read + write |
-| GIF | | | next (from Brian's 1998 Readgif / Writegif) |
+| GIF (with GIF-flavour LZW) | `c/gif.c`, `c/lzw.c` | next | read, composite, write |
 | FLI / FLC | | | then (from Brian's Readfli; a new writer) |
 
 History: this repo started as [geotiff](https://github.com/BrianOBrien/geotiff), whose commits it
@@ -33,10 +33,29 @@ like Mark Adler's `puff.c`.
 ## Build and test
 ```
 make              # C tools: c/gtinfo, c/gtcopy
-make test         # needs gdal-bin, libtiff-tools
+make test         # needs gdal-bin, libtiff-tools, ffmpeg, python3-pil
 tools/build-xgt.sh   # builds the Xojo test app through the Xojo IDE scripting socket
 make test-xojo    # the same tests on the Xojo build
 ```
+
+## GIF
+From Brian's `Readgif` (1999) and `Writegif` (1998-99, the GIF export of WinFLI 4.0), with fixes: the
+writer's colour table was filled backwards; 1-bit images need LZW code size 2; the table size flag now
+matches what is written; unknown extensions are skipped. The LZW is the GIF flavour of Brian's
+`lzw_decompress` / `lzw::write` (least significant bit first, no early change, 255-byte sub-blocks).
+
+Reads GIF87a/89a: every frame with its rectangle, local or global palette, interlace, delay, disposal,
+transparency; NETSCAPE loop count; comments. `gif_composite` renders a frame as a viewer shows it.
+Writes GIF89a with palettes, loop count, comment, delay, disposal and transparency.
+
+`giftool file.gif` (summary), `giftool -rgba out.raw file.gif` (every rendered frame),
+`giftool copy in.gif out.gif`.
+
+Tests (`tests/gif/`): 13 GIFs from Pillow, ffmpeg and a hand-made true 1-bit file (2-colour table,
+LZW code size 2): palettes of 2-256 colours, interlace, animations with global and local palettes,
+sub-rectangles, transparency, disposal 1/2/3. Every rendered frame must equal ffmpeg's and Pillow's
+pixel for pixel, and every copy made by our writer must decode in ffmpeg exactly like its source.
+130 damaged files: no crash.
 
 ## TIFF / GeoTIFF
 Reads classic TIFF (II or MM), strips or tiles, uncompressed, LZW, Deflate or PackBits, horizontal
