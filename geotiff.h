@@ -77,4 +77,27 @@ int             gt_key_double(const GTFile *f, uint16_t id, double *out);       
 /* Raster (column, row: 0,0 = top-left corner of the top-left pixel) to model coordinates. */
 int gt_pixel_to_model(const GTFile *f, double col, double row, double *x, double *y);
 
+/* ---------- writing ---------- */
+
+typedef struct
+{
+    uint16_t    compression;    /* TIF_COMP_NONE, TIF_COMP_LZW or TIF_COMP_PACKBITS */
+    uint16_t    predictor;      /* TIF_PRED_NONE or TIF_PRED_HORIZONTAL */
+    uint32_t    rowsPerStrip;   /* 0 = about 8 KB of pixels per strip */
+    uint16_t    sampleFormat;   /* 0 or 1 = unsigned integer (tag left out); 2 signed, 3 float */
+    int         hasTransform;   /* write georeferencing from gt[] (GDAL order, corner-based) */
+    double      gt[6];
+    int         epsg;           /* 0 = no coordinate system keys */
+    int         geographic;     /* 1: epsg is lat/long (GeographicType), 0: projected (ProjectedCSType) */
+    int         pixelIsPoint;   /* GTRasterType 2: tie point names a pixel centre */
+    const char *citation;       /* optional GTCitation text */
+    const char *software;       /* optional Software tag */
+} GTWriteOptions;
+
+/* Write a GeoTIFF: classic TIFF, little-endian, strips. pixels = width*height*spp samples,
+   interleaved, this machine's byte order (as gt_read_image returns them).
+   Returns 1, or 0 with err filled. */
+int gt_write(const char *path, const uint8_t *pixels, uint32_t width, uint32_t height,
+             uint16_t spp, uint16_t bitsPerSample, const GTWriteOptions *o, char *err, size_t errlen);
+
 #endif

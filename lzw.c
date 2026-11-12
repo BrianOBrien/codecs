@@ -11,6 +11,7 @@
  *     add OLD_CODE + CHARACTER to the table
  *     OLD_CODE = NEW_CODE
  */
+#include <stdlib.h>
 #include "lzw.h"
 
 #define LZW_CLEAR   256
@@ -132,4 +133,122 @@ long lzw_tiff_decode(const uint8_t *in, size_t inlen, uint8_t *out, size_t outle
         old_code = new_code;
     }
     return (long) nout;
+}
+
+/* ---------- encoder ---------- */
+
+#define HSIZE 9001          /* hash table size (prime), as libtiff */
+
+typedef struct
+{
+    uint8_t *out;
+    size_t   n, cap;
+    uint32_t accume;
+    int      bitsInAccume;
+} bitstream;
+
+/* Write nbits, most significant bit first (the GIF bitstream::write put the low bits first). */
+static int bs_write(bitstream *bs, int code, int nbits)
+{
+    bs->accume = (bs->accume << nbits) | (uint32_t) code;
+    bs->bitsInAccume += nbits;
+    while (bs->bitsInAccume >= 8)
+    {
+        if (bs->n >= bs->cap)
+        {
+            uint8_t *p = realloc(bs->out, bs->cap * 2);
+            if (!p)
+                return 0;
+            bs->out = p;
+            bs->cap *= 2;
+        }
+        bs->out[bs->n++] = (uint8_t) (bs->accume >> (bs->bitsInAccume - 8));
+        bs->bitsInAccume -= 8;
+    }
+    return 1;
+}
+
+uint8_t *lzw_tiff_encode(const uint8_t *in, size_t inlen, size_t *outlen)
+{
+    static int32_t htab[HSIZE];     /* key: (c << 12) | prefix, -1 = empty */
+    static int16_t codetab[HSIZE];  /* the code for that key */
+    bitstream bs;
+    int nbits = 9, maxcode = 511, free_ent = LZW_FIRST, ent = -1, i;
+    size_t k;
+
+    bs.cap = inlen / 2 + 64;
+    bs.out = malloc(bs.cap);
+    bs.n = 0;
+    bs.accume = 0;
+    bs.bitsInAccume = 0;
+    if (!bs.out)
+        return NULL;
+    for (i = 0; i < HSIZE; ++i)
+        htab[i] = -1;
+    if (!bs_write(&bs, LZW_CLEAR, nbits))
+        goto fail;
+
+    for (k = 0; k < inlen; ++k)
+    {
+        int c = in[k], h;
+        int32_t key;
+        if (ent == -1)
+        {
+            ent = c;                                /* P = c */
+            continue;
+        }
+        key = (int32_t) c << 12 | ent;
+        h = (int) (((uint32_t) c << 8 ^ (uint32_t) ent) % HSIZE);
+        while (htab[h] != -1 && htab[h] != key)    /* is Pc in the table? */
+            h = (h + 1) % HSIZE;
+        if (htab[h] == key)
+        {
+            ent = codetab[h];                       /* yes: P = Pc */
+            continue;
+        }
+        if (!bs_write(&bs, ent, nbits))             /* no: output the code for P */
+            goto fail;
+        ent = c;                                    /* P = c */
+        htab[h] = key;                              /* add Pc to the string table */
+        codetab[h] = (int16_t) free_ent++;
+        if (free_ent == LZW_TABLE - 2)              /* full (4094): Clear and start again */
+        {
+            if (!bs_write(&bs, LZW_CLEAR, nbits))
+                goto fail;
+            for (i = 0; i < HSIZE; ++i)
+                htab[i] = -1;
+            nbits = 9;
+            maxcode = 511;
+            free_ent = LZW_FIRST;
+        }
+        else if (free_ent > maxcode)                /* early change, matching the decoder */
+        {
+            nbits++;
+            maxcode = (1 << nbits) - 1;
+        }
+    }
+    if (ent != -1)
+    {
+        if (!bs_write(&bs, ent, nbits))
+            goto fail;
+        free_ent++;
+        if (free_ent == LZW_TABLE - 2)
+        {
+            if (!bs_write(&bs, LZW_CLEAR, nbits))
+                goto fail;
+            nbits = 9;
+        }
+        else if (free_ent > maxcode)
+            nbits++;
+    }
+    if (!bs_write(&bs, LZW_EOI, nbits))
+        goto fail;
+    if (bs.bitsInAccume > 0)                        /* pad the last byte with zeros */
+        if (!bs_write(&bs, 0, 8 - bs.bitsInAccume))
+            goto fail;
+    *outlen = bs.n;
+    return bs.out;
+fail:
+    free(bs.out);
+    return NULL;
 }

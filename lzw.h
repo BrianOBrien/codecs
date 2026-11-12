@@ -20,4 +20,10 @@
  * Returns the number of bytes written to out (at most outlen), or -1 on corrupt data. */
 long lzw_tiff_decode(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen);
 
+/* Encode one strip or tile as TIFF LZW. Returns a malloc'd buffer (caller frees) and its
+ * length in *outlen, or NULL if out of memory. Follows the loop of Brian's lzw::write
+ * (compress/Lzw.cpp); width and Clear rules as TIFF 6.0 / libtiff: Clear first, early
+ * change, Clear when the table reaches 4094, EndOfInformation last. */
+uint8_t *lzw_tiff_encode(const uint8_t *in, size_t inlen, size_t *outlen);
+
 #endif

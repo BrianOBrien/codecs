@@ -1,3 +1,4 @@
 gtinfo
 *.o
 tests/out/
+gtcopy

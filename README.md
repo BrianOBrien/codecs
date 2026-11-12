@@ -1,6 +1,6 @@
 # geotiff
 
-A small GeoTIFF reader in plain C, no dependencies. It is the reference implementation for a
+A small GeoTIFF reader and writer in plain C, no dependencies. It is the reference implementation for a
 Xojo port (FlightOverview), and it is checked byte for byte against GDAL.
 
 It grew from two older pieces of Brian O'Brien's code:
@@ -18,8 +18,17 @@ PackBits is TIFF's run-length coding.
 - GeoTIFF: ModelPixelScale + ModelTiepoint, or ModelTransformation; GeoKeyDirectory with its
   double and ASCII parameters; PixelIsPoint handled like GDAL (half-pixel shift)
 
-Not yet: BigTIFF, JPEG, CCITT fax (Huffman, compression 2/3/4), separate planes, the floating-point predictor, projections
-(it reports the EPSG codes; turning UTM into lat/long comes later). Writing comes next.
+## What it writes
+- Classic TIFF, little-endian, strips; uncompressed, LZW or PackBits; horizontal predictor
+- 1-4 samples of 8, 16 or 32 bits (grey, grey + alpha, RGB, RGBA)
+- GeoTIFF: ModelPixelScale + ModelTiepoint (or ModelTransformation when rotated), GeoKeys
+  GTModelType, GTRasterType, GTCitation, and the EPSG code as GeographicType or ProjectedCSType
+- The LZW encoder follows the loop of Brian's `lzw::write` (compress/Lzw.cpp), with TIFF's
+  bit order, early change and Clear at 4094; its output is within 0.01% of libtiff's size.
+
+Not yet: BigTIFF, JPEG, CCITT fax (Huffman, compression 2/3/4), separate planes, the floating-point
+predictor, projections (it reports the EPSG codes; turning UTM into lat/long comes later), writing
+Deflate or tiles.
 
 ## Use
 ```
@@ -28,7 +37,8 @@ make            # builds gtinfo
 ./gtinfo -corners file.tif           # the four corners and the centre
 ./gtinfo -geotransform file.tif      # 6 numbers, GDAL order
 ./gtinfo -raw out.raw file.tif       # also decode the pixels (interleaved, host byte order)
-make test       # needs gdal-bin
+./gtcopy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif   # read, then write again
+make test       # needs gdal-bin and libtiff-tools
 ```
 
 ## Tests
@@ -39,6 +49,10 @@ UTM zone 7N, PixelIsPoint. For each one the geotransform must match GDAL's and t
 must match GDAL's byte for byte. Then about 200 cut-short and corrupted copies must give an error,
 never a crash.
 
+`tests/run_write_tests.sh` copies 8 of those files 6 ways each with `gtcopy` (none, PackBits, LZW,
+LZW + predictor, one row per strip, one strip). Every copy must read cleanly in libtiff and give
+GDAL the same geotransform, EPSG code, AREA_OR_POINT and pixels as the source: 48 of 48 pass.
+
 ## API (geotiff.h)
 `gt_open`, `gt_close`, `gt_find`, `gt_tag_number`, `gt_read_image`, `gt_key_int`, `gt_key_string`,
-`gt_key_double`, `gt_pixel_to_model`.
+`gt_key_double`, `gt_pixel_to_model`, `gt_write` (with `GTWriteOptions`).
