@@ -32,6 +32,13 @@ make_case u16_pred       $OUT/base_ll.tif  -ot UInt16 -scale 0 255 0 65535 -co C
 make_case u16_big        $OUT/base_ll.tif  -ot UInt16 -scale 0 255 0 65535 -co COMPRESS=LZW -co ENDIANNESS=BIG -co PREDICTOR=2
 make_case one_strip_row  $OUT/base_ll.tif  -co COMPRESS=LZW -co BLOCKYSIZE=1
 make_case one_big_strip  $OUT/base_ll.tif  -co COMPRESS=LZW -co BLOCKYSIZE=574   # fills the LZW table: 12-bit codes and Clear codes
+make_case deflate        $OUT/base_ll.tif  -co COMPRESS=DEFLATE
+make_case deflate_pred   $OUT/base_ll.tif  -co COMPRESS=DEFLATE -co PREDICTOR=2
+make_case deflate_z1     $OUT/base_ll.tif  -co COMPRESS=DEFLATE -co ZLEVEL=1
+make_case deflate_z9_big $OUT/base_ll.tif  -co COMPRESS=DEFLATE -co ZLEVEL=9 -co BLOCKYSIZE=574
+make_case deflate_tiled16 $OUT/base_ll.tif -ot UInt16 -scale 0 255 0 65535 -co COMPRESS=DEFLATE -co TILED=YES -co PREDICTOR=2 -co ENDIANNESS=BIG
+make_case packbits       $OUT/base_ll.tif  -co COMPRESS=PACKBITS
+make_case packbits_tiled $OUT/base_ll.tif  -co COMPRESS=PACKBITS -co TILED=YES
 make_case utm_lzw        $OUT/base_utm.tif -co COMPRESS=LZW
 make_case pixelispoint   $OUT/base_ll.tif  -co COMPRESS=LZW --config GTIFF_POINT_GEO_IGNORE FALSE -mo AREA_OR_POINT=Point
 
@@ -53,8 +60,27 @@ check() {  # name
   else fail=$((fail+1)); printf "FAIL  %-16s %s\n" $1 "$msg"; fi
 }
 
-for c in none_strip lzw_strip lzw_pred lzw_tiled lzw_tiled_pred bigendian gray8 u16_pred u16_big one_strip_row one_big_strip utm_lzw pixelispoint; do
+for c in none_strip lzw_strip lzw_pred lzw_tiled lzw_tiled_pred bigendian gray8 u16_pred u16_big one_strip_row one_big_strip deflate deflate_pred deflate_z1 deflate_z9_big deflate_tiled16 packbits packbits_tiled utm_lzw pixelispoint; do
   check $c
 done
+# Damaged files: cut short and corrupted copies must give an error, never a crash
+crash=0; tried=0
+for f in $OUT/*.tif; do
+  sz=$(stat -c %s $f)
+  for cut in 7 60 200 $((sz/3)) $((sz/2)) $((sz-10)); do
+    head -c $cut $f > $OUT/damaged.tif; tried=$((tried+1))
+    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>&1; rc=$?
+    [ $rc -ge 128 ] && { crash=$((crash+1)); echo "CRASH  $(basename $f) cut at $cut (exit $rc)"; }
+  done
+  for seed in 1 2 3; do
+    python3 -c "import random,sys; random.seed($seed); b=bytearray(open('$f','rb').read()); [b.__setitem__(random.randrange(8,len(b)), random.randrange(256)) for _ in range(40)]; open('$OUT/damaged.tif','wb').write(b)"
+    tried=$((tried+1))
+    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>&1; rc=$?
+    [ $rc -ge 128 ] && { crash=$((crash+1)); echo "CRASH  $(basename $f) corrupted, seed $seed (exit $rc)"; }
+  done
+done
+if [ $crash = 0 ]; then pass=$((pass+1)); echo "PASS  damaged files: $tried cut-short or corrupted copies, no crash"
+else fail=$((fail+1)); echo "FAIL  damaged files: $crash of $tried crashed"; fi
+
 echo "$pass passed, $fail failed"
 [ $fail = 0 ]

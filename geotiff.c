@@ -10,6 +10,7 @@
 #include <string.h>
 #include "geotiff.h"
 #include "lzw.h"
+#include "inflate.h"
 
 static void seterr(char *err, size_t errlen, const char *msg)
 {
@@ -442,6 +443,36 @@ int gt_pixel_to_model(const GTFile *f, double col, double row, double *x, double
 
 /* ---------- pixels ---------- */
 
+/* PackBits (TIFF compression 32773), TIFF's run-length coding. Each header byte n:
+   0..127 copy the next n+1 bytes; -127..-1 repeat the next byte 1-n times; -128 skip. */
+static long packbits_decode(const uint8_t *in, size_t inlen, uint8_t *out, size_t outlen)
+{
+    size_t i = 0, nout = 0;
+    while (i < inlen && nout < outlen)
+    {
+        int n = (int8_t) in[i++];
+        if (n >= 0)
+        {
+            int k;
+            if (i + (size_t) n + 1 > inlen)
+                return -1;
+            for (k = 0; k <= n && nout < outlen; ++k)
+                out[nout++] = in[i + k];
+            i += (size_t) n + 1;
+        }
+        else if (n != -128)
+        {
+            int k;
+            if (i >= inlen)
+                return -1;
+            for (k = 0; k < 1 - n && nout < outlen; ++k)
+                out[nout++] = in[i];
+            i++;
+        }
+    }
+    return (long) nout;
+}
+
 /* Undo horizontal differencing (Predictor 2) on rows of `width` pixels, host byte order. */
 static void undo_predictor(uint8_t *buf, uint32_t rows, uint32_t width, int spp, int bytes)
 {
@@ -489,9 +520,10 @@ uint8_t *gt_read_image(GTFile *f, size_t *nbytes, char *err, size_t errlen)
         seterr(err, errlen, "separate planes (PlanarConfiguration 2) are not supported yet");
         return NULL;
     }
-    if (f->compression != TIF_COMP_NONE && f->compression != TIF_COMP_LZW)
+    if (f->compression != TIF_COMP_NONE && f->compression != TIF_COMP_LZW && f->compression != TIF_COMP_DEFLATE
+        && f->compression != TIF_COMP_DEFLATE_OLD && f->compression != TIF_COMP_PACKBITS)
     {
-        seterr(err, errlen, "only uncompressed and LZW images are supported");
+        seterr(err, errlen, "compression not supported (none, LZW, Deflate and PackBits are)");
         return NULL;
     }
     if (f->predictor == TIF_PRED_FLOAT)
@@ -556,12 +588,18 @@ uint8_t *gt_read_image(GTFile *f, size_t *nbytes, char *err, size_t errlen)
             free(packed);
             return NULL;
         }
-        if (f->compression == TIF_COMP_LZW)
+        if (f->compression != TIF_COMP_NONE)
         {
-            long n = lzw_tiff_decode(packed, count, block, blockBytes);
+            long n;
+            if (f->compression == TIF_COMP_LZW)
+                n = lzw_tiff_decode(packed, count, block, blockBytes);
+            else if (f->compression == TIF_COMP_PACKBITS)
+                n = packbits_decode(packed, count, block, blockBytes);
+            else
+                n = zlib_inflate(packed, count, block, blockBytes);
             if (n < 0)
             {
-                seterr(err, errlen, "corrupt LZW data");
+                seterr(err, errlen, "corrupt compressed data");
                 free(image);
                 free(block);
                 free(packed);

@@ -3,8 +3,8 @@ CFLAGS  ?= -O2 -Wall -Wextra -std=c99
 
 all: gtinfo
 
-gtinfo: gtinfo.c geotiff.c lzw.c geotiff.h lzw.h tiff.h
-	$(CC) $(CFLAGS) -o $@ gtinfo.c geotiff.c lzw.c
+gtinfo: gtinfo.c geotiff.c lzw.c inflate.c geotiff.h lzw.h inflate.h tiff.h
+	$(CC) $(CFLAGS) -o $@ gtinfo.c geotiff.c lzw.c inflate.c
 
 test: gtinfo
 	./tests/run_tests.sh

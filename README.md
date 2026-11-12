@@ -8,13 +8,17 @@ It grew from two older pieces of Brian O'Brien's code:
 - [BrianOBrien/lzw](https://github.com/BrianOBrien/lzw) (GIF LZW): the decoder's string table and stack,
   changed for TIFF (most-significant-bit-first codes, no sub-blocks, early change).
 
+`inflate.c` (Deflate) is written from RFC 1950/1951 and structured like Mark Adler's `puff.c`;
+PackBits is TIFF's run-length coding.
+
 ## What it reads
 - Classic TIFF, Intel (II) or Motorola (MM) byte order; the first image (later IFDs are counted)
-- Strips or tiles; uncompressed or LZW; horizontal predictor (2); 8, 16 and 32-bit samples, interleaved
+- Strips or tiles; uncompressed, LZW, Deflate (8 and 32946) or PackBits; horizontal predictor (2);
+  8, 16 and 32-bit samples, interleaved
 - GeoTIFF: ModelPixelScale + ModelTiepoint, or ModelTransformation; GeoKeyDirectory with its
   double and ASCII parameters; PixelIsPoint handled like GDAL (half-pixel shift)
 
-Not yet: BigTIFF, Deflate/JPEG/PackBits, separate planes, the floating-point predictor, projections
+Not yet: BigTIFF, JPEG, CCITT fax (Huffman, compression 2/3/4), separate planes, the floating-point predictor, projections
 (it reports the EPSG codes; turning UTM into lat/long comes later). Writing comes next.
 
 ## Use
@@ -29,9 +33,11 @@ make test       # needs gdal-bin
 
 ## Tests
 `tests/run_tests.sh` makes GeoTIFFs with GDAL from FlightOverview's map (`tests/map.png`), georeferenced
-at 68.17 N 139.37 W, in 13 layouts: uncompressed, LZW, LZW + predictor, tiled, big-endian, grey,
-16-bit, one row per strip, one strip for the whole image, UTM zone 7N, PixelIsPoint. For each one the
-geotransform must match GDAL's and the decoded pixels must match GDAL's byte for byte.
+at 68.17 N 139.37 W, in 20 layouts: uncompressed, LZW, Deflate (levels 1 and 9), PackBits, each with
+predictor / tiles / big-endian / 16-bit variations, one row per strip, one strip for the whole image,
+UTM zone 7N, PixelIsPoint. For each one the geotransform must match GDAL's and the decoded pixels
+must match GDAL's byte for byte. Then about 200 cut-short and corrupted copies must give an error,
+never a crash.
 
 ## API (geotiff.h)
 `gt_open`, `gt_close`, `gt_find`, `gt_tag_number`, `gt_read_image`, `gt_key_int`, `gt_key_string`,
