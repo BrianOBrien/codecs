@@ -6,7 +6,7 @@
 set -u
 cd "$(dirname "$0")"
 OUT=out; mkdir -p $OUT
-GT=../gtinfo
+GT=${GT:-../gtinfo}   # GT=../xojo/xgt.sh tests the Xojo port
 SRC=map.png
 pass=0; fail=0
 
@@ -66,20 +66,21 @@ done
 # Damaged files: cut short and corrupted copies must give an error, never a crash
 crash=0; tried=0
 for f in $OUT/*.tif; do
+  [ "$(basename $f)" = damaged.tif ] && continue
   sz=$(stat -c %s $f)
   for cut in 7 60 200 $((sz/3)) $((sz/2)) $((sz-10)); do
     head -c $cut $f > $OUT/damaged.tif; tried=$((tried+1))
-    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>&1; rc=$?
-    [ $rc -ge 128 ] && { crash=$((crash+1)); echo "CRASH  $(basename $f) cut at $cut (exit $rc)"; }
+    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>$OUT/damaged.err; rc=$?
+    if [ $rc -ge 128 ] || grep -qi exception $OUT/damaged.err; then crash=$((crash+1)); echo "CRASH  $(basename $f) cut at $cut (exit $rc) $(head -c 120 $OUT/damaged.err)"; fi
   done
   for seed in 1 2 3; do
     python3 -c "import random,sys; random.seed($seed); b=bytearray(open('$f','rb').read()); [b.__setitem__(random.randrange(8,len(b)), random.randrange(256)) for _ in range(40)]; open('$OUT/damaged.tif','wb').write(b)"
     tried=$((tried+1))
-    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>&1; rc=$?
-    [ $rc -ge 128 ] && { crash=$((crash+1)); echo "CRASH  $(basename $f) corrupted, seed $seed (exit $rc)"; }
+    $GT -raw $OUT/damaged.raw $OUT/damaged.tif >/dev/null 2>$OUT/damaged.err; rc=$?
+    if [ $rc -ge 128 ] || grep -qi exception $OUT/damaged.err; then crash=$((crash+1)); echo "CRASH  $(basename $f) corrupted, seed $seed (exit $rc) $(head -c 120 $OUT/damaged.err)"; fi
   done
 done
-if [ $crash = 0 ]; then pass=$((pass+1)); echo "PASS  damaged files: $tried cut-short or corrupted copies, no crash"
+if [ $crash = 0 ]; then pass=$((pass+1)); echo "PASS  damaged files: $tried cut-short or corrupted copies, no crash or exception"
 else fail=$((fail+1)); echo "FAIL  damaged files: $crash of $tried crashed"; fi
 
 echo "$pass passed, $fail failed"

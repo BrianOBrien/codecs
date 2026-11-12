@@ -6,7 +6,7 @@
 set -u
 cd "$(dirname "$0")"
 OUT=out; mkdir -p $OUT/w
-CP=../gtcopy
+CP=${CP:-../gtcopy}   # CP="../xojo/xgt.sh copy" tests the Xojo port
 pass=0; fail=0
 
 gdal_gt()   { gdalinfo -json "$1" | python3 -c 'import json,sys; print(*json.load(sys.stdin).get("geoTransform",[]))'; }

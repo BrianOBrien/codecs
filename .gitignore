@@ -2,3 +2,5 @@ gtinfo
 *.o
 tests/out/
 gtcopy
+xojo/Builds*
+*.xojo_uistate

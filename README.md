@@ -56,3 +56,30 @@ GDAL the same geotransform, EPSG code, AREA_OR_POINT and pixels as the source: 4
 ## API (geotiff.h)
 `gt_open`, `gt_close`, `gt_find`, `gt_tag_number`, `gt_read_image`, `gt_key_int`, `gt_key_string`,
 `gt_key_double`, `gt_pixel_to_model`, `gt_write` (with `GTWriteOptions`).
+
+## Xojo port (`xojo/`)
+The same library in Xojo (2026r3.1, API 2), file for file:
+
+| C | Xojo |
+|---|---|
+| `tiff.h` | module `TIFF` (same constant names) |
+| `lzw.c` | module `LZW` (`Decode`, `Encode`) |
+| `inflate.c` | classes `Inflater`, `HuffTable` |
+| PackBits in `geotiff.c` / `gtwrite.c` | module `PackBits` |
+| `geotiff.c` | classes `GTFile`, `GTTag`, `GTGeoKey` |
+| `gtwrite.c` | module `GTWriter`, classes `GTWriteOptions`, `GTOutTag` |
+| `gtinfo`, `gtcopy` | console app `xgt` (`xgt -geotransform`, `xgt -raw`, `xgt copy`) |
+
+```
+Var err As String
+Var f As GTFile = GTFile.Open("/path/map.tif", err)
+Var pixels As MemoryBlock = f.ReadImage(err)      // interleaved, this machine's byte order
+Var o As New GTWriteOptions                       // LZW by default
+o.HasTransform = f.HasTransform
+...
+Call GTWriter.Write("/path/copy.tif", pixels, f.Width, f.Height, f.SamplesPerPixel, f.BitsPerSample, o, err)
+```
+
+`xojo/build.sh` builds `xgt` through the Xojo IDE's scripting socket (`xojo/tools/`); `make test-xojo`
+then runs the C test suites against it: 21/21 reader tests and 48/48 writer tests pass, and the Xojo
+writer's image data is byte-identical to the C writer's.
