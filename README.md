@@ -22,7 +22,7 @@ in their own repos and copy in, or link to, only the Xojo folders they need.
 | Deflate | `c/inflate.c` | `xojo/InflateCodec` | decode |
 | PackBits | in `c/geotiff.c`, `c/gtwrite.c` | `xojo/PackBitsCodec` | decode + encode |
 | TIFF / GeoTIFF | `c/geotiff.c`, `c/gtwrite.c` | `xojo/TIFFCodec` | read + write |
-| GIF (with GIF-flavour LZW) | `c/gif.c`, `c/lzw.c` | next | read, composite, write |
+| GIF (with GIF-flavour LZW) | `c/gif.c`, `c/lzw.c` | `xojo/GIFCodec`, `LZW.GIFDecode/GIFEncode` | read, composite, write |
 | FLI / FLC | | | then (from Brian's Readfli; a new writer) |
 
 History: this repo started as [geotiff](https://github.com/BrianOBrien/geotiff), whose commits it
@@ -49,13 +49,14 @@ transparency; NETSCAPE loop count; comments. `gif_composite` renders a frame as 
 Writes GIF89a with palettes, loop count, comment, delay, disposal and transparency.
 
 `giftool file.gif` (summary), `giftool -rgba out.raw file.gif` (every rendered frame),
-`giftool copy in.gif out.gif`.
+`giftool copy in.gif out.gif`. Xojo: `GIFFile.Read(path, err)`, `.Frames()`, `.Composite(i)`, `.Write(path, err)`;
+the test app runs it as `xgt gif ...`.
 
 Tests (`tests/gif/`): 13 GIFs from Pillow, ffmpeg and a hand-made true 1-bit file (2-colour table,
 LZW code size 2): palettes of 2-256 colours, interlace, animations with global and local palettes,
 sub-rectangles, transparency, disposal 1/2/3. Every rendered frame must equal ffmpeg's and Pillow's
 pixel for pixel, and every copy made by our writer must decode in ffmpeg exactly like its source.
-130 damaged files: no crash.
+130 damaged files: no crash. C and Xojo both pass, and their copies are byte-identical.
 
 ## TIFF / GeoTIFF
 Reads classic TIFF (II or MM), strips or tiles, uncompressed, LZW, Deflate or PackBits, horizontal

@@ -19,6 +19,7 @@ test: gtinfo gtcopy giftool
 # The Xojo port: build with the Xojo IDE (xojo/build.sh), then run the same tests on it
 test-xojo: gtinfo gtcopy
 	cd ../tests/geotiff && GT=../../xojo/xgt.sh ./run_tests.sh && CP="../../xojo/xgt.sh copy" ./run_write_tests.sh
+	cd ../tests/gif && GT="../../xojo/xgt.sh gif" ./run_tests.sh
 
 clean:
 	rm -f gtinfo gtcopy giftool

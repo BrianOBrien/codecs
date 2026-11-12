@@ -9,12 +9,69 @@ Inherits ConsoleApplication
 		  //   xgt -corners file.tif          four corners and the centre
 		  //   xgt [-raw out.raw] file.tif    summary; -raw also writes the decoded pixels
 		  //   xgt copy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif
+		  //   xgt gif file.gif | xgt gif -rgba out.raw file.gif | xgt gif copy in.gif out.gif
 		  If args.Count >= 2 Then
 		    If args(1) = "copy" Then Return DoCopy(args)
+		    If args(1) = "gif" Then Return DoGIF(args)
 		  End If
 		  Return DoInfo(args)
 		End Function
 	#tag EndEvent
+
+	#tag Method, Flags = &h0
+		Function DoGIF(args() As String) As Integer
+		  // The jobs of the C giftool
+		  Var err As String
+		  If args.Count = 5 And args(2) = "copy" Then
+		    Var g As GIFFile = GIFFile.Read(FullPath(args(3)), err)
+		    If g = Nil Then
+		      StdErr.WriteLine("xgt gif: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    If Not g.Write(FullPath(args(4)), err) Then
+		      StdErr.WriteLine("xgt gif: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
+		  If args.Count = 5 And args(2) = "-rgba" Then
+		    Var g As GIFFile = GIFFile.Read(FullPath(args(4)), err)
+		    If g = Nil Then
+		      StdErr.WriteLine("xgt gif: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Try
+		      Var bs As BinaryStream = BinaryStream.Create(New FolderItem(FullPath(args(3)), FolderItem.PathModes.Native), True)
+		      For i As Integer = 0 To g.Frames.LastIndex
+		        Var c As MemoryBlock = g.Composite(i)
+		        bs.Write(c.StringValue(0, c.Size))
+		      Next
+		      bs.Close
+		    Catch e As RuntimeException
+		      StdErr.WriteLine("xgt gif: cannot write " + args(3))
+		      Return 1
+		    End Try
+		    Return 0
+		  End If
+		  If args.Count = 3 Then
+		    Var g As GIFFile = GIFFile.Read(FullPath(args(2)), err)
+		    If g = Nil Then
+		      StdErr.WriteLine("xgt gif: " + args(2) + ": " + err)
+		      Return 1
+		    End If
+		    Print("Screen: " + g.Width.ToString + " x " + g.Height.ToString + ", global palette " + g.NColors.ToString _
+		    + " colours, loop " + g.LoopCount.ToString + ", " + g.Frames.Count.ToString + " frame(s)")
+		    For i As Integer = 0 To g.Frames.LastIndex
+		      Var f As GIFFrame = g.Frames(i)
+		      Print("  frame " + i.ToString + ": " + f.Width.ToString + "x" + f.Height.ToString + " at (" + f.Left.ToString + "," _
+		      + f.Top.ToString + "), delay " + f.Delay.ToString + ", disposal " + f.Disposal.ToString + ", transparent " + f.Transparent.ToString)
+		    Next
+		    Return 0
+		  End If
+		  StdErr.WriteLine("usage: xgt gif file.gif | xgt gif -rgba out.raw file.gif | xgt gif copy in.gif out.gif")
+		  Return 2
+		End Function
+	#tag EndMethod
 
 	#tag Method, Flags = &h0
 		Function DoInfo(args() As String) As Integer

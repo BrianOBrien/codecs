@@ -4,7 +4,7 @@
 set -u
 cd "$(dirname "$0")"
 OUT=out; mkdir -p $OUT
-GT=${GT:-../../c/giftool}        # GT=../../xojo/xgt.sh gif   tests the Xojo port (later)
+GT=${GT:-../../c/giftool}        # GT="../../xojo/xgt.sh gif" tests the Xojo port
 pass=0; fail=0
 
 python3 make_gifs.py $OUT/src >/dev/null
@@ -40,7 +40,7 @@ for f in $OUT/src/*.gif; do
     [ "$dff" = 0 ] || msg="$msg vs ffmpeg: $dff px differ;"
     [ "$dpil" = 0 ] || msg="$msg vs Pillow: $dpil px differ;"
     # writer: our copy must decode (in ffmpeg) exactly like the source
-    if ${GT%% *} copy $f $OUT/$n.copy.gif 2>$OUT/$n.err; then
+    if $GT copy $f $OUT/$n.copy.gif 2>$OUT/$n.err; then
       ffmpeg_rgba $OUT/$n.copy.gif $OUT/$n.copyff.raw
       dc=$(compare $OUT/$n.ff.raw $OUT/$n.copyff.raw)
       [ "$dc" = 0 ] || msg="$msg copy decodes differently: $dc px;"
