@@ -1,6 +1,6 @@
-gtinfo
+c/gtinfo
+c/gtcopy
 *.o
-tests/out/
-gtcopy
+tests/*/out/
 xojo/Builds*
 *.xojo_uistate

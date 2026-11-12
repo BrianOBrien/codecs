@@ -6,7 +6,7 @@
 set -u
 cd "$(dirname "$0")"
 OUT=out; mkdir -p $OUT
-GT=${GT:-../gtinfo}   # GT=../xojo/xgt.sh tests the Xojo port
+GT=${GT:-../../c/gtinfo}   # GT=../../xojo/xgt.sh tests the Xojo port
 SRC=map.png
 pass=0; fail=0
 

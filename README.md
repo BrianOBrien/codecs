@@ -1,75 +1,53 @@
-# geotiff
+# codecs
 
-A small GeoTIFF reader and writer in plain C, no dependencies. It is the reference implementation for a
-Xojo port (FlightOverview), and it is checked byte for byte against GDAL.
+Image codecs in three layers:
 
-It grew from two older pieces of Brian O'Brien's code:
-- `rast2tif.c` / `tiff.h` (IDC software, 2000): the TIFF header and IFD walk. `tiff.h` keeps its names.
-- [BrianOBrien/lzw](https://github.com/BrianOBrien/lzw) (GIF LZW): the decoder's string table and stack,
-  changed for TIFF (most-significant-bit-first codes, no sub-blocks, early change).
-
-`inflate.c` (Deflate) is written from RFC 1950/1951 and structured like Mark Adler's `puff.c`;
-PackBits is TIFF's run-length coding.
-
-## What it reads
-- Classic TIFF, Intel (II) or Motorola (MM) byte order; the first image (later IFDs are counted)
-- Strips or tiles; uncompressed, LZW, Deflate (8 and 32946) or PackBits; horizontal predictor (2);
-  8, 16 and 32-bit samples, interleaved
-- GeoTIFF: ModelPixelScale + ModelTiepoint, or ModelTransformation; GeoKeyDirectory with its
-  double and ASCII parameters; PixelIsPoint handled like GDAL (half-pixel shift)
-
-## What it writes
-- Classic TIFF, little-endian, strips; uncompressed, LZW or PackBits; horizontal predictor
-- 1-4 samples of 8, 16 or 32 bits (grey, grey + alpha, RGB, RGBA)
-- GeoTIFF: ModelPixelScale + ModelTiepoint (or ModelTransformation when rotated), GeoKeys
-  GTModelType, GTRasterType, GTCitation, and the EPSG code as GeographicType or ProjectedCSType
-- The LZW encoder follows the loop of Brian's `lzw::write` (compress/Lzw.cpp), with TIFF's
-  bit order, early change and Clear at 4094; its output is within 0.01% of libtiff's size.
-
-Not yet: BigTIFF, JPEG, CCITT fax (Huffman, compression 2/3/4), separate planes, the floating-point
-predictor, projections (it reports the EPSG codes; turning UTM into lat/long comes later), writing
-Deflate or tiles.
-
-## Use
 ```
-make            # builds gtinfo
-./gtinfo file.tif                    # tags, GeoKeys, origin, pixel size, corners
-./gtinfo -corners file.tif           # the four corners and the centre
-./gtinfo -geotransform file.tif      # 6 numbers, GDAL order
-./gtinfo -raw out.raw file.tif       # also decode the pixels (interleaved, host byte order)
-./gtcopy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif   # read, then write again
-make test       # needs gdal-bin and libtiff-tools
+consumers       FlightOverview, a WinFLI revival, DICOM tools, command-line tools ...
+                    | use
+xojo/           pure Xojo modules, one folder per codec (no plug-ins, any platform)
+                    | ported line for line from, tested against
+c/              small plain-C reference codecs, no dependencies
+                    | checked against
+tests/          GDAL, libtiff, ffmpeg, Pillow
 ```
 
-## Tests
-`tests/run_tests.sh` makes GeoTIFFs with GDAL from FlightOverview's map (`tests/map.png`), georeferenced
-at 68.17 N 139.37 W, in 20 layouts: uncompressed, LZW, Deflate (levels 1 and 9), PackBits, each with
-predictor / tiles / big-endian / 16-bit variations, one row per strip, one strip for the whole image,
-UTM zone 7N, PixelIsPoint. For each one the geotransform must match GDAL's and the decoded pixels
-must match GDAL's byte for byte. Then about 200 cut-short and corrupted copies must give an error,
-never a crash.
+Each codec has a C reference that is short enough to read and is checked against independent tools.
+Its Xojo port must pass the same tests, driven through the console test app `xgt`. Consumers live
+in their own repos and copy in, or link to, only the Xojo folders they need.
 
-`tests/run_write_tests.sh` copies 8 of those files 6 ways each with `gtcopy` (none, PackBits, LZW,
-LZW + predictor, one row per strip, one strip). Every copy must read cleanly in libtiff and give
-GDAL the same geotransform, EPSG code, AREA_OR_POINT and pixels as the source: 48 of 48 pass.
+| Codec | C | Xojo | Status |
+|---|---|---|---|
+| LZW (TIFF flavour) | `c/lzw.c` | `xojo/LZWCodec` | decode + encode |
+| Deflate | `c/inflate.c` | `xojo/InflateCodec` | decode |
+| PackBits | in `c/geotiff.c`, `c/gtwrite.c` | `xojo/PackBitsCodec` | decode + encode |
+| TIFF / GeoTIFF | `c/geotiff.c`, `c/gtwrite.c` | `xojo/TIFFCodec` | read + write |
+| GIF | | | next (from Brian's 1998 Readgif / Writegif) |
+| FLI / FLC | | | then (from Brian's Readfli; a new writer) |
 
-## API (geotiff.h)
-`gt_open`, `gt_close`, `gt_find`, `gt_tag_number`, `gt_read_image`, `gt_key_int`, `gt_key_string`,
-`gt_key_double`, `gt_pixel_to_model`, `gt_write` (with `GTWriteOptions`).
+History: this repo started as [geotiff](https://github.com/BrianOBrien/geotiff), whose commits it
+keeps. The code grew from Brian O'Brien's `rast2tif.c` / `tiff.h` (2000) and his GIF LZW
+([lzw](https://github.com/BrianOBrien/lzw)); Deflate is written from RFC 1950/1951, structured
+like Mark Adler's `puff.c`.
 
-## Xojo port (`xojo/`)
-The same library in Xojo (2026r3.1, API 2), file for file:
+## Build and test
+```
+make              # C tools: c/gtinfo, c/gtcopy
+make test         # needs gdal-bin, libtiff-tools
+tools/build-xgt.sh   # builds the Xojo test app through the Xojo IDE scripting socket
+make test-xojo    # the same tests on the Xojo build
+```
 
-| C | Xojo |
-|---|---|
-| `tiff.h` | module `TIFF` (same constant names) |
-| `lzw.c` | module `LZW` (`Decode`, `Encode`) |
-| `inflate.c` | classes `Inflater`, `HuffTable` |
-| PackBits in `geotiff.c` / `gtwrite.c` | module `PackBits` |
-| `geotiff.c` | classes `GTFile`, `GTTag`, `GTGeoKey` |
-| `gtwrite.c` | module `GTWriter`, classes `GTWriteOptions`, `GTOutTag` |
-| `gtinfo`, `gtcopy` | console app `xgt` (`xgt -geotransform`, `xgt -raw`, `xgt copy`) |
+## TIFF / GeoTIFF
+Reads classic TIFF (II or MM), strips or tiles, uncompressed, LZW, Deflate or PackBits, horizontal
+predictor, 8/16/32-bit samples, GeoTIFF tie point + scale or transformation, GeoKeys, PixelIsPoint.
+Writes little-endian strips, uncompressed, LZW or PackBits, predictor, geo tags and EPSG.
+Not yet: BigTIFF, JPEG, CCITT fax, separate planes, float predictor, projections, Deflate/tile writing.
 
+C tools: `gtinfo [-corners | -geotransform] [-raw out.raw] file.tif`,
+`gtcopy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif`.
+
+Xojo:
 ```
 Var err As String
 Var f As GTFile = GTFile.Open("/path/map.tif", err)
@@ -80,6 +58,8 @@ o.HasTransform = f.HasTransform
 Call GTWriter.Write("/path/copy.tif", pixels, f.Width, f.Height, f.SamplesPerPixel, f.BitsPerSample, o, err)
 ```
 
-`xojo/build.sh` builds `xgt` through the Xojo IDE's scripting socket (`xojo/tools/`); `make test-xojo`
-then runs the C test suites against it: 21/21 reader tests and 48/48 writer tests pass, and the Xojo
-writer's image data is byte-identical to the C writer's.
+
+Tests (`tests/geotiff/`): 20 GDAL-made layouts must match GDAL pixel for pixel and in georeferencing;
+about 200 damaged files must give an error, never a crash or exception; 48 copies (8 sources x 6 write
+modes) must read cleanly in libtiff and match their source in GDAL. C and Xojo both pass all of them,
+and the two writers produce byte-identical image data.
