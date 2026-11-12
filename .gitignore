@@ -1,0 +1,3 @@
+gtinfo
+*.o
+tests/out/
