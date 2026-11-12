@@ -5,3 +5,5 @@ tests/*/out/
 xojo/Builds*
 *.xojo_uistate
 c/giftool
+tests/fli/corpus/
+c/flitool

@@ -23,7 +23,7 @@ in their own repos and copy in, or link to, only the Xojo folders they need.
 | PackBits | in `c/geotiff.c`, `c/gtwrite.c` | `xojo/PackBitsCodec` | decode + encode |
 | TIFF / GeoTIFF | `c/geotiff.c`, `c/gtwrite.c` | `xojo/TIFFCodec` | read + write |
 | GIF (with GIF-flavour LZW) | `c/gif.c`, `c/lzw.c` | `xojo/GIFCodec`, `LZW.GIFDecode/GIFEncode` | read, composite, write |
-| FLI / FLC | | | then (from Brian's Readfli; a new writer) |
+| FLI / FLC | `c/fli.c` | next | read FLI + FLC, write FLC |
 
 History: this repo started as [geotiff](https://github.com/BrianOBrien/geotiff), whose commits it
 keeps. The code grew from Brian O'Brien's `rast2tif.c` / `tiff.h` (2000) and his GIF LZW
@@ -57,6 +57,26 @@ LZW code size 2): palettes of 2-256 colours, interlace, animations with global a
 sub-rectangles, transparency, disposal 1/2/3. Every rendered frame must equal ffmpeg's and Pillow's
 pixel for pixel, and every copy made by our writer must decode in ffmpeg exactly like its source.
 130 damaged files: no crash. C and Xojo both pass, and their copies are byte-identical.
+
+## FLI / FLC
+The reader follows Brian's `Readfli` (1998-2000), the core of WinFLI 98: FLI and FLC headers, and the
+chunks COLOR_256, COLOR_64, LC, SS2, BLACK, BYTE_RUN, COPY and postage stamp. Fixes: COLOR chunks with
+several packets now move past each packet; FLC speed is milliseconds (FLI: 1/70 s); BYTE_RUN lines are
+decoded to the image width (FLC spec); 64-level colours map 63 to 255; chunk sizes are trusted for
+stepping, and prefix/unknown chunks are skipped.
+
+WinFLI only ever saved GIFs, so the FLC writer is new: BYTE_RUN first frame, SS2 deltas (LC deltas for
+odd widths: ffmpeg puts SS2's "last byte" word in the wrong column), COLOR_256 when the palette changes,
+and the ring frame back to the start.
+
+`flitool file.fli`, `flitool -rgba out.raw file.fli`, `flitool copy in.fli out.flc`,
+`flitool pattern out.flc W H N` (a test animation of any size).
+
+Tests (`tests/fli/`): ten real FLI/FLC files from Brian's drive (3D Studio 3 and others, 1993-2002;
+fetched from the WD into `tests/fli/corpus/`, not committed), 516 frames: every frame equals ffmpeg's
+decoder pixel for pixel (one file, which ffmpeg refuses, is checked through its copy). Each is copied as
+an FLC with our writer and must decode the same in ffmpeg and in our reader; so must generated patterns
+of 640x203, 641x203, 2x300 and 1x1. 140 damaged files: no crash.
 
 ## TIFF / GeoTIFF
 Reads classic TIFF (II or MM), strips or tiles, uncompressed, LZW, Deflate or PackBits, horizontal
