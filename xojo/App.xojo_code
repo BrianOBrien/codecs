@@ -10,7 +10,7 @@ Inherits ConsoleApplication
 		  //   xgt [-raw out.raw] file.tif    summary; -raw also writes the decoded pixels
 		  //   xgt copy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif
 		  //   xgt gif file.gif | xgt gif -rgba out.raw file.gif | xgt gif copy in.gif out.gif
-		  //   xgt fli file.fli | xgt fli -rgba out.raw file.fli | xgt fli copy in.fli out.flc | xgt fli pattern out.flc W H N
+		  //   xgt fli file.fli | xgt fli -rgba out.raw file.fli | xgt fli copy in.fli out.flc | xgt fli pattern out.flc W H N | xgt fli togif in.fli out.gif
 		  If args.Count >= 2 Then
 		    If args(1) = "copy" Then Return DoCopy(args)
 		    If args(1) = "gif" Then Return DoGIF(args)
@@ -31,6 +31,38 @@ Inherits ConsoleApplication
 		      Return 1
 		    End If
 		    If Not f.WriteFLC(FullPath(args(4)), err) Then
+		      StdErr.WriteLine("xgt fli: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
+		  If args.Count = 5 And args(2) = "togif" Then // WinFLI's "Save as GIF": FLIFile in, GIFFile out
+		    Var f As FLIFile = FLIFile.Read(FullPath(args(3)), err)
+		    If f = Nil Then
+		      StdErr.WriteLine("xgt fli: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    Var g As New GIFFile
+		    g.Width = f.Width
+		    g.Height = f.Height
+		    g.NColors = 256
+		    g.Palette = f.Frames(0).Palette // global palette: the first frame's
+		    g.LoopCount = 0
+		    g.Comment = "Converted from FLI by the codecs Xojo modules (after WinFLI)"
+		    For Each fr As FLIFrame In f.Frames
+		      Var gf As New GIFFrame
+		      gf.Width = f.Width
+		      gf.Height = f.Height
+		      gf.Pixels = fr.Pixels
+		      gf.Delay = Max(2, (f.DelayMs + 5) \ 10) // hundredths of a second
+		      gf.Disposal = 1
+		      If StrComp(fr.Palette.StringValue(0, 768), g.Palette.StringValue(0, 768), 0) <> 0 Then
+		        gf.NColors = 256 // the palette changed: a local colour table
+		        gf.Palette = fr.Palette
+		      End If
+		      g.Frames.Add(gf)
+		    Next
+		    If Not g.Write(FullPath(args(4)), err) Then
 		      StdErr.WriteLine("xgt fli: " + args(4) + ": " + err)
 		      Return 1
 		    End If

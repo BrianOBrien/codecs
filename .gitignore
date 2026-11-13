@@ -7,3 +7,8 @@ xojo/Builds*
 c/giftool
 tests/fli/corpus/
 c/flitool
+Artifacts/
+demo/*.raw
+demo/*.gif
+demo/*.png
+demo/*.mp4
