@@ -19,6 +19,7 @@
 #include <string.h>
 #include "gif.h"
 #include "lzw.h"
+#include "quant.h"
 
 /* ---------- a tiny colour table: 24-bit colour -> index ---------- */
 
@@ -62,6 +63,26 @@ static int ch_add(CHash *h, uint32_t rgb, int max)
     h->key[i] = k;
     h->val[i] = (int16_t) h->n;
     return h->n++;
+}
+
+static int cmp_key(const void *a, const void *b)
+{
+    uint64_t x = pal_sort_key(*(const uint32_t *) a), y = pal_sort_key(*(const uint32_t *) b);
+    return x < y ? -1 : x > y;
+}
+
+/* Renumber the colours of a table in palette order (greys dark to light, then by hue). */
+static void ch_sort(CHash *h)
+{
+    uint32_t col[256];
+    int i, n = 0;
+    for (i = 0; i < 1024; ++i)
+        if (h->key[i])
+            col[n++] = h->key[i] & 0xFFFFFF;
+    qsort(col, (size_t) n, sizeof(uint32_t), cmp_key);
+    ch_clear(h);
+    for (i = 0; i < n; ++i)
+        ch_add(h, col[i], 256);
 }
 
 /* ---------- rendering the source, one frame at a time ---------- */
@@ -150,6 +171,7 @@ typedef struct
     CHash   gmap;
     uint8_t gpal[768];
     int     gcount, gslots;    /* colours, and palette slots (a power of two) */
+    int     reserve;           /* 1: some pixel is transparent, keep a slot free for it */
 } Opt;
 
 static int bits_of(int n)
@@ -194,6 +216,8 @@ static long try_cut(Opt *o, const uint8_t *T, const uint8_t *P, int L, int Tp, i
                 return -1;
             }
         }
+    if (!o->global)
+        ch_sort(&local);
     if (o->global)
     {
         ncol = o->gslots;
@@ -338,21 +362,33 @@ GIFFile *gif_optimize(const GIFFile *src, char *err, size_t errlen)
     o->width = src->width;
     o->height = src->height;
 
-    /* pass 1: every colour shown; one global palette if there are 256 or fewer */
+    /* pass 1: every colour shown; one global palette if there are 256 or fewer (255 when some
+       pixel is ever transparent: the transparent index needs a slot of its own) */
     ch_clear(&o->gmap);
     o->global = 1;
-    for (i = 0; i < src->nFrames && o->global; ++i)
     {
-        step(&s);
-        for (k = 0; k < (int) (n / 4); ++k)
-            if (s.canvas[4 * k + 3] && ch_add(&o->gmap, RGB(s.canvas + 4 * k), 256) < 0)
+        int anyClear = 0;
+        for (i = 0; i < src->nFrames && o->global; ++i)
+        {
+            step(&s);
+            for (k = 0; k < (int) (n / 4); ++k)
             {
-                o->global = 0;
-                break;
+                if (!s.canvas[4 * k + 3])
+                    anyClear = 1;
+                else if (ch_add(&o->gmap, RGB(s.canvas + 4 * k), 256) < 0)
+                {
+                    o->global = 0;
+                    break;
+                }
             }
+        }
+        if (o->global && anyClear && o->gmap.n >= 256)
+            o->global = 0;
+        o->reserve = anyClear;
     }
     if (o->global)
     {
+        ch_sort(&o->gmap);
         for (k = 0; k < 1024; ++k)
             if (o->gmap.key[k])
             {
@@ -363,7 +399,7 @@ GIFFile *gif_optimize(const GIFFile *src, char *err, size_t errlen)
                 o->gpal[3 * v + 2] = (uint8_t) c;
             }
         o->gcount = o->gmap.n ? o->gmap.n : 1;
-        o->gslots = 1 << bits_of(o->gcount);
+        o->gslots = 1 << bits_of(o->gcount + (o->reserve ? 1 : 0));
         g->ncolors = o->gslots;
         memcpy(g->palette, o->gpal, 768);
     }
@@ -558,4 +594,163 @@ int gif_same_look(const GIFFile *a, const GIFFile *b, char *why, size_t whylen)
     if (result)
         snprintf(why, whylen, "%d pictures identical", look);
     return result;
+}
+
+/* ---------- quantizing: at most k colours over the whole animation ---------- */
+
+typedef struct
+{
+    uint32_t *key;             /* colour | 0x1000000, 0 = empty */
+    int      *val;
+    uint32_t  cap;
+    int       n;
+} BigHash;
+
+static int bh_find(BigHash *h, uint32_t rgb, int add)
+{
+    uint32_t k = rgb | 0x1000000u, i = (rgb * 2654435761u) & (h->cap - 1);
+    while (h->key[i])
+    {
+        if (h->key[i] == k)
+            return h->val[i];
+        i = (i + 1) & (h->cap - 1);
+    }
+    if (!add)
+        return -1;
+    if ((uint32_t) (h->n + 1) * 2 > h->cap)      /* grow, then insert */
+    {
+        BigHash g;
+        uint32_t j;
+        g.cap = h->cap * 2;
+        g.n = 0;
+        g.key = calloc(g.cap, sizeof(uint32_t));
+        g.val = malloc(g.cap * sizeof(int));
+        if (!g.key || !g.val)
+        {
+            free(g.key);
+            free(g.val);
+            return -2;
+        }
+        for (j = 0; j < h->cap; ++j)
+            if (h->key[j])
+            {
+                uint32_t c = h->key[j] & 0xFFFFFF, q = (c * 2654435761u) & (g.cap - 1);
+                while (g.key[q])
+                    q = (q + 1) & (g.cap - 1);
+                g.key[q] = h->key[j];
+                g.val[q] = h->val[j];
+                g.n++;
+            }
+        free(h->key);
+        free(h->val);
+        *h = g;
+        return bh_find(h, rgb, 1);
+    }
+    h->key[i] = k;
+    h->val[i] = h->n;
+    return h->n++;
+}
+
+int gif_quantize(GIFFile *g, int k, char *err, size_t errlen)
+{
+    BigHash h;
+    Stepper s;
+    uint32_t *rgb = NULL, *cnt = NULL, pal[256];
+    int *map = NULL, i, m = -1, cap = 4096, anyClear = 0;
+    size_t n = (size_t) g->width * g->height * 4, q;
+
+    err[0] = 0;
+    if (k < 2 || k > 256 || g->nFrames < 1)
+    {
+        snprintf(err, errlen, "colours must be 2 to 256");
+        return -1;
+    }
+    h.cap = 4096;
+    h.n = 0;
+    h.key = calloc(h.cap, sizeof(uint32_t));
+    h.val = malloc(h.cap * sizeof(int));
+    rgb = malloc(cap * sizeof(uint32_t));
+    cnt = malloc(cap * sizeof(uint32_t));
+    if (!h.key || !h.val || !rgb || !cnt || !step_init(&s, g))
+    {
+        snprintf(err, errlen, "out of memory");
+        goto done;
+    }
+    /* the super palette: every colour shown, with how many pixels show it (frame after frame) */
+    for (i = 0; i < g->nFrames; ++i)
+    {
+        step(&s);
+        for (q = 0; q < n; q += 4)
+            if (!s.canvas[q + 3])
+                anyClear = 1;
+            else
+            {
+                uint32_t c = RGB(s.canvas + q);
+                int before = h.n, v = bh_find(&h, c, 1);
+                if (v < 0)
+                {
+                    snprintf(err, errlen, "out of memory");
+                    step_free(&s);
+                    goto done;
+                }
+                if (h.n > before)
+                {
+                    if (h.n > cap)
+                    {
+                        cap *= 2;
+                        rgb = realloc(rgb, cap * sizeof(uint32_t));
+                        cnt = realloc(cnt, cap * sizeof(uint32_t));
+                        if (!rgb || !cnt)
+                        {
+                            snprintf(err, errlen, "out of memory");
+                            step_free(&s);
+                            goto done;
+                        }
+                    }
+                    rgb[v] = c;
+                    cnt[v] = 0;
+                }
+                cnt[v]++;
+            }
+    }
+    step_free(&s);
+    map = malloc((h.n ? h.n : 1) * sizeof(int));
+    if (!map)
+    {
+        snprintf(err, errlen, "out of memory");
+        goto done;
+    }
+    m = quant_build(rgb, cnt, h.n, anyClear ? k - 1 : k, pal, map);   /* the transparent index takes a slot */
+    if (m < 0)
+    {
+        snprintf(err, errlen, "out of memory");
+        goto done;
+    }
+    /* every palette entry becomes the colour its colour maps to */
+    {
+        int f, e;
+        for (f = -1; f < g->nFrames; ++f)
+        {
+            uint8_t *p = f < 0 ? g->palette : g->frames[f].palette;
+            int nc = f < 0 ? g->ncolors : g->frames[f].ncolors;
+            for (e = 0; e < nc; ++e)
+            {
+                int v = bh_find(&h, ((uint32_t) p[3 * e] << 16) | ((uint32_t) p[3 * e + 1] << 8) | p[3 * e + 2], 0);
+                if (v >= 0)
+                {
+                    uint32_t c = pal[map[v]];
+                    p[3 * e] = (uint8_t) (c >> 16);
+                    p[3 * e + 1] = (uint8_t) (c >> 8);
+                    p[3 * e + 2] = (uint8_t) c;
+                }
+            }
+        }
+    }
+done:
+    free(h.key);
+    free(h.val);
+    free(rgb);
+    free(cnt);
+    free(map);
+    return m;
 }

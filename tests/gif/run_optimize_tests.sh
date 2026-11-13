@@ -1,7 +1,8 @@
 #!/bin/bash
 # Optimizer tests: optimize every test GIF and the WinFli samples; the result must show the same
 # pictures for the same times (giftool same) and must decode in ffmpeg like the source.
-# With XGT set (XGT=../../xojo/xgt.sh), the Xojo GIFOptimizer must write the same bytes as the C one.
+# Each is also quantized to 64 and 16 colours. With XGT set (XGT=../../xojo/xgt.sh), the Xojo
+# GIFOptimizer and Quantizer must write the same bytes as the C ones.
 set -u
 cd "$(dirname "$0")"
 OUT=out/opt; mkdir -p $OUT
@@ -29,6 +30,14 @@ for f in out/src/*.gif ../../../winfli/SampleAnimations/gif/*.gif; do
         cmp -s $OUT/$n.gif $OUT/$n.x.gif || msg="$msg Xojo output differs from C;"
       else msg="$msg Xojo optimize failed: $(cat $OUT/$n.xerr);"; fi
     fi
+    # lossy: at most 64 and 16 colours (k-means); the C and Xojo files must be the same
+    for k in 64 16; do
+      if $GT quantize "$f" $OUT/$n.q$k.gif $k >/dev/null 2>$OUT/$n.qerr; then
+        if [ -n "$XGT" ]; then
+          $XGT gif quantize "$f" $OUT/$n.q$k.x.gif $k 2>$OUT/$n.xerr && cmp -s $OUT/$n.q$k.gif $OUT/$n.q$k.x.gif || msg="$msg Xojo quantize $k differs from C;"
+        fi
+      else msg="$msg quantize $k failed: $(cat $OUT/$n.qerr);"; fi
+    done
   fi
   a=$(stat -c %s "$f"); b=$(stat -c %s $OUT/$n.gif 2>/dev/null || echo 0)
   if [ -z "$msg" ]; then pass=$((pass+1)); printf "PASS  %-36s %8d -> %8d bytes%s\n" $n $a $b "${XGT:+, Xojo bytes identical}"

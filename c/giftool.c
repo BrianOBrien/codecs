@@ -5,6 +5,7 @@
  *   giftool -rgba out.raw file.gif    every frame as a viewer shows it, RGBA, one after another
  *   giftool copy in.gif out.gif       read, then write again with our writer
  *   giftool optimize in.gif out.gif   lossless optimize, check the result looks the same, print sizes
+ *   giftool quantize in out K         lossy: at most K colours (k-means in OKLab), then optimize
  *   giftool optimize-raw in out       the optimizer's output as is (no size check), for tests
  *   giftool same a.gif b.gif          do two GIFs show the same pictures for the same times?
  */
@@ -40,6 +41,30 @@ int main(int argc, char *argv[])
         gif_free(a);
         gif_free(b);
         return i ? 0 : 1;
+    }
+    if (argc == 5 && !strcmp(argv[1], "quantize"))       /* lossy: at most K colours, then optimize */
+    {
+        GIFFile *o;
+        int k = atoi(argv[4]), m;
+        g = gif_read(argv[2], err, sizeof err);
+        if (!g)
+        {
+            fprintf(stderr, "giftool: %s: %s\n", argv[2], err);
+            return 2;
+        }
+        m = gif_quantize(g, k, err, sizeof err);
+        o = m < 0 ? NULL : gif_optimize(g, err, sizeof err);
+        if (!o || !gif_write(argv[3], o, err, sizeof err))
+        {
+            fprintf(stderr, "giftool: quantize %s: %s\n", argv[2], err);
+            gif_free(g);
+            gif_free(o);
+            return 1;
+        }
+        printf("%s: %d colours, %d frames\n", argv[2], m, o->nFrames);
+        gif_free(g);
+        gif_free(o);
+        return 0;
     }
     if (argc == 4 && !strcmp(argv[1], "optimize-raw"))   /* the optimizer's output as is (tests) */
     {

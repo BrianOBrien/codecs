@@ -169,6 +169,21 @@ Inherits ConsoleApplication
 		    End If
 		    Return 0
 		  End If
+		  If args.Count = 6 And args(2) = "quantize" Then // at most K colours, then optimize (as giftool)
+		    Var g As GIFFile = GIFFile.Read(FullPath(args(3)), err)
+		    If g = Nil Then
+		      StdErr.WriteLine("xgt gif: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    Var m As Integer = GIFOptimizer.Quantize(g, Val(args(5)), err)
+		    Var o As GIFFile
+		    If m >= 0 Then o = GIFOptimizer.Optimize(g, err)
+		    If o = Nil Or Not o.Write(FullPath(args(4)), err) Then
+		      StdErr.WriteLine("xgt gif: quantize " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
 		  If args.Count = 5 And args(2) = "optimize-raw" Then // GIFOptimizer output as is (no size check)
 		    Var g As GIFFile = GIFFile.Read(FullPath(args(3)), err)
 		    If g = Nil Then

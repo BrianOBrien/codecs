@@ -62,6 +62,11 @@ int gif_write(const char *path, const GIFFile *g, char *err, size_t errlen);
    exact palettes, identical frames merged. The result looks exactly like g. NULL on failure. */
 GIFFile *gif_optimize(const GIFFile *g, char *err, size_t errlen);
 
+/* Lossy: at most k colours (2..256) over the whole animation, by weighted k-means in OKLab
+   (quant.c): every palette entry is rewritten to its colour's representative. Run gif_optimize
+   after it. Returns the number of colours left, or -1 with err set. */
+int gif_quantize(GIFFile *g, int k, char *err, size_t errlen);
+
 /* 1 if a and b show the same pictures for the same times (identical frames in a row count as one). */
 int gif_same_look(const GIFFile *a, const GIFFile *b, char *why, size_t whylen);
 

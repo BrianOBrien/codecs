@@ -9,8 +9,8 @@ gtinfo: gtinfo.c geotiff.c lzw.c inflate.c geotiff.h lzw.h inflate.h tiff.h
 gtcopy: gtcopy.c geotiff.c gtwrite.c lzw.c inflate.c geotiff.h lzw.h inflate.h tiff.h
 	$(CC) $(CFLAGS) -o $@ gtcopy.c geotiff.c gtwrite.c lzw.c inflate.c
 
-giftool: giftool.c gif.c gifopt.c lzw.c gif.h lzw.h
-	$(CC) $(CFLAGS) -o $@ giftool.c gif.c gifopt.c lzw.c
+giftool: giftool.c gif.c gifopt.c quant.c lzw.c gif.h lzw.h quant.h
+	$(CC) $(CFLAGS) -o $@ giftool.c gif.c gifopt.c quant.c lzw.c -lm
 
 flitool: flitool.c fli.c fli.h
 	$(CC) $(CFLAGS) -o $@ flitool.c fli.c

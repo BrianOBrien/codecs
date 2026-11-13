@@ -31,12 +31,15 @@ Protected Module GIFOptimizer
 		  mGMap = New Dictionary
 		  mGPal = New MemoryBlock(768)
 		  mGlobal = True
+		  Var anyClear As Boolean = False
 		  Var st As New GIFStepper(src)
 		  For i As Integer = 0 To src.Frames.LastIndex
 		    st.StepFrame
 		    Var cv As MemoryBlock = st.Canvas
 		    For k As Integer = 0 To n - 4 Step 4
-		      If cv.Byte(k + 3) <> 0 Then
+		      If cv.Byte(k + 3) = 0 Then
+		        anyClear = True
+		      Else
 		        Var key As Integer = cv.Byte(k) * 65536 + cv.Byte(k + 1) * 256 + cv.Byte(k + 2)
 		        If Not mGMap.HasKey(key) Then
 		          If mGMap.KeyCount >= 256 Then
@@ -53,6 +56,9 @@ Protected Module GIFOptimizer
 		    Next
 		    If Not mGlobal Then Exit For
 		  Next
+		  // the transparent index needs a slot of its own: 255 colours at most then
+		  If mGlobal And anyClear And mGMap.KeyCount >= 256 Then mGlobal = False
+		  If mGlobal Then SortGlobal
 
 		  Var g As New GIFFile
 		  g.Width = src.Width
@@ -61,7 +67,7 @@ Protected Module GIFOptimizer
 		  g.LoopCount = src.LoopCount
 		  If mGlobal Then
 		    Var count As Integer = Max(1, mGMap.KeyCount)
-		    mGSlots = Bitwise.ShiftLeft(1, BitsOf(count))
+		    mGSlots = Bitwise.ShiftLeft(1, BitsOf(count + If(anyClear, 1, 0)))
 		    g.NColors = mGSlots
 		    g.Palette = New MemoryBlock(768)
 		    g.Palette.StringValue(0, 768) = mGPal.StringValue(0, 768)
@@ -225,6 +231,7 @@ Protected Module GIFOptimizer
 		      End If
 		    Next
 		  Next
+		  If Not mGlobal Then SortLocal(localMap, localPal)
 		  Var trans As Integer = -1
 		  Var ncol As Integer
 		  If mGlobal Then
@@ -283,6 +290,109 @@ Protected Module GIFOptimizer
 		    cost = cost + Bitwise.ShiftLeft(3, bits)
 		  End If
 		  Return cost
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h21
+		Private Sub SortGlobal()
+		  // renumber the global colours in palette order (Quantizer.SortKey)
+		  Var cols() As Integer
+		  Var keys() As UInt64
+		  For Each k As Variant In mGMap.Keys
+		    cols.Add(k.IntegerValue)
+		    keys.Add(Quantizer.SortKey(k.IntegerValue))
+		  Next
+		  keys.SortWith(cols)
+		  mGMap = New Dictionary
+		  For v As Integer = 0 To cols.LastIndex
+		    mGMap.Value(cols(v)) = v
+		    mGPal.Byte(3 * v) = Bitwise.ShiftRight(cols(v), 16) And 255
+		    mGPal.Byte(3 * v + 1) = Bitwise.ShiftRight(cols(v), 8) And 255
+		    mGPal.Byte(3 * v + 2) = cols(v) And 255
+		  Next
+		End Sub
+	#tag EndMethod
+
+	#tag Method, Flags = &h21
+		Private Sub SortLocal(map As Dictionary, pal As MemoryBlock)
+		  Var cols() As Integer
+		  Var keys() As UInt64
+		  For Each k As Variant In map.Keys
+		    cols.Add(k.IntegerValue)
+		    keys.Add(Quantizer.SortKey(k.IntegerValue))
+		  Next
+		  keys.SortWith(cols)
+		  map.RemoveAll
+		  For v As Integer = 0 To cols.LastIndex
+		    map.Value(cols(v)) = v
+		    pal.Byte(3 * v) = Bitwise.ShiftRight(cols(v), 16) And 255
+		    pal.Byte(3 * v + 1) = Bitwise.ShiftRight(cols(v), 8) And 255
+		    pal.Byte(3 * v + 2) = cols(v) And 255
+		  Next
+		End Sub
+	#tag EndMethod
+
+	#tag Method, Flags = &h1
+		Protected Function Quantize(g As GIFFile, k As Integer, ByRef err As String) As Integer
+		  // Lossy: at most k colours (2..256) over the whole animation (Quantizer: weighted k-means in
+		  // OKLab); every palette entry is rewritten to its colour's representative. Optimize after it.
+		  // Returns the number of colours left, or -1 with err set. Same result as c/gifopt.c gif_quantize.
+		  #Pragma DisableBackgroundTasks
+		  #Pragma BoundsChecking False
+		  err = ""
+		  If k < 2 Or k > 256 Or g = Nil Or g.Frames.Count = 0 Then
+		    err = "colours must be 2 to 256"
+		    Return -1
+		  End If
+		  Var index As New Dictionary
+		  Var rgb() As Integer
+		  Var cnt() As Integer
+		  Var anyClear As Boolean = False
+		  Var n As Integer = g.Width * g.Height * 4
+		  Var st As New GIFStepper(g)
+		  For i As Integer = 0 To g.Frames.LastIndex // the super palette, frame after frame
+		    st.StepFrame
+		    Var cv As MemoryBlock = st.Canvas
+		    For q As Integer = 0 To n - 4 Step 4
+		      If cv.Byte(q + 3) = 0 Then
+		        anyClear = True
+		      Else
+		        Var c As Integer = cv.Byte(q) * 65536 + cv.Byte(q + 1) * 256 + cv.Byte(q + 2)
+		        If index.HasKey(c) Then
+		          Var v As Integer = index.Value(c)
+		          cnt(v) = cnt(v) + 1
+		        Else
+		          index.Value(c) = rgb.Count
+		          rgb.Add(c)
+		          cnt.Add(1)
+		        End If
+		      End If
+		    Next
+		  Next
+		  Var pal() As Integer
+		  Var map() As Integer
+		  Var m As Integer = Quantizer.Build(rgb, cnt, If(anyClear, k - 1, k), pal, map)
+		  For f As Integer = -1 To g.Frames.LastIndex
+		    Var p As MemoryBlock
+		    Var nc As Integer
+		    If f < 0 Then
+		      p = g.Palette
+		      nc = g.NColors
+		    Else
+		      p = g.Frames(f).Palette
+		      nc = g.Frames(f).NColors
+		    End If
+		    For e As Integer = 0 To nc - 1
+		      Var c As Integer = p.Byte(3 * e) * 65536 + p.Byte(3 * e + 1) * 256 + p.Byte(3 * e + 2)
+		      If index.HasKey(c) Then
+		        Var nw As Integer = pal(map(index.Value(c).IntegerValue))
+		        p.Byte(3 * e) = Bitwise.ShiftRight(nw, 16) And 255
+		        p.Byte(3 * e + 1) = Bitwise.ShiftRight(nw, 8) And 255
+		        p.Byte(3 * e + 2) = nw And 255
+		      End If
+		    Next
+		  Next
+		  Return m
 		End Function
 	#tag EndMethod
 
