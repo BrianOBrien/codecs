@@ -51,10 +51,10 @@ static uint8_t *read_subblocks(rd *r, size_t *len)
         return NULL;
     while ((size = get8(r)) != 0 && !r->bad)
     {
-        if (r->pos + (size_t) size > r->n)
+        if (r->pos + (size_t) size > r->n)        /* file cut short: keep what is there */
         {
+            size = (int) (r->n - r->pos);
             r->bad = 1;
-            break;
         }
         if (n + size > cap)
         {
@@ -72,6 +72,8 @@ static uint8_t *read_subblocks(rd *r, size_t *len)
         memcpy(buf + n, r->p + r->pos, size);
         n += size;
         r->pos += size;
+        if (r->bad)
+            break;
     }
     *len = n;
     return buf;
@@ -253,7 +255,7 @@ GIFFile *gif_read(const char *path, char *err, size_t errlen)
 
             minCode = get8(&r);
             codes = read_subblocks(&r, &len);
-            if (r.bad || !codes || f->width <= 0 || f->height <= 0)
+            if (!codes || f->width <= 0 || f->height <= 0 || (r.bad && len == 0))
             {
                 free(codes);
                 r.bad = 1;
@@ -280,6 +282,11 @@ GIFFile *gif_read(const char *path, char *err, size_t errlen)
             }
             free(tmp);
             g->nFrames++;
+            if (r.bad)                            /* the file was cut short in this image: keep it, stop */
+            {
+                g->truncated = 1;
+                break;
+            }
         }
         else
         {

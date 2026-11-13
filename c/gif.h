@@ -7,6 +7,7 @@
  *   - 1-bit images need an LZW code size of 2, not 1;
  *   - the colour table size in the packed fields now matches what is written;
  *   - unknown extensions are skipped instead of ending the program;
+ *   - a file cut short inside an image keeps the part that is there, as browsers and Pillow do;
  *   - binary images the old writer saved with LZW code size 1 (illegal, rejected by Pillow and
  *     others) are still read, as ffmpeg does;
  *   - frames are kept with their own rectangle, palette, delay, disposal and transparency,
@@ -39,6 +40,7 @@ typedef struct
     int       background;               /* background colour index */
     int       loopCount;                /* NETSCAPE2.0 loop count, 0 = forever, -1 = no extension */
     char      comment[256];             /* first comment extension, if any */
+    int       truncated;                /* 1 if the file ended inside an image (what was there is kept) */
     int       nFrames;
     GIFFrame *frames;
 } GIFFile;
@@ -55,5 +57,12 @@ uint8_t *gif_composite(const GIFFile *g, int upTo);
 /* Write a GIF89a. Frames need left/top/width/height, pixels, and either a local palette
    (ncolors > 0) or the global one in g. Returns 1, or 0 with err filled. */
 int gif_write(const char *path, const GIFFile *g, char *err, size_t errlen);
+
+/* Lossless optimizer (gifopt.c): re-cut every frame to what changed, transparency where it pays,
+   exact palettes, identical frames merged. The result looks exactly like g. NULL on failure. */
+GIFFile *gif_optimize(const GIFFile *g, char *err, size_t errlen);
+
+/* 1 if a and b show the same pictures for the same times (identical frames in a row count as one). */
+int gif_same_look(const GIFFile *a, const GIFFile *b, char *why, size_t whylen);
 
 #endif
