@@ -479,14 +479,18 @@ int gif_write(const char *path, const GIFFile *g, char *err, size_t errlen)
             seterr(err, errlen, "a frame has no palette");
             return 0;
         }
-        /* graphic control extension: disposal, transparency, delay */
-        fputc(0x21, fp);
-        fputc(0xF9, fp);
-        fputc(4, fp);
-        fputc(((f->disposal & 7) << 2) | (f->transparent >= 0 ? 1 : 0), fp);
-        put16f(fp, f->delay);
-        fputc(f->transparent >= 0 ? f->transparent : 0, fp);
-        fputc(0, fp);
+        /* graphic control extension: disposal, transparency, delay. Left out when it says nothing:
+           no transparency, no delay, and disposal 0 or 1 (both leave the frame in place). */
+        if (f->transparent >= 0 || f->delay > 0 || f->disposal > 1)
+        {
+            fputc(0x21, fp);
+            fputc(0xF9, fp);
+            fputc(4, fp);
+            fputc(((f->disposal & 7) << 2) | (f->transparent >= 0 ? 1 : 0), fp);
+            put16f(fp, f->delay);
+            fputc(f->transparent >= 0 ? f->transparent : 0, fp);
+            fputc(0, fp);
+        }
 
         /* image descriptor (never interlaced on output) */
         fputc(0x2C, fp);
@@ -499,7 +503,17 @@ int gif_write(const char *path, const GIFFile *g, char *err, size_t errlen)
             put_palette(fp, f->palette, f->ncolors, bits);
 
         fputc(minCode, fp);
-        codes = lzw_gif_encode(f->pixels, npix, minCode, &clen);
+        {
+            /* Clear when the table is full, or deferred clear: whichever is shorter.
+               GIF_LZW_MODE=clear or =defer forces one (for the tests). */
+            const char *m = getenv("GIF_LZW_MODE");
+            if (m && !strcmp(m, "clear"))
+                codes = lzw_gif_encode_mode(f->pixels, npix, minCode, 0, &clen);
+            else if (m && !strcmp(m, "defer"))
+                codes = lzw_gif_encode_mode(f->pixels, npix, minCode, 1, &clen);
+            else
+                codes = lzw_gif_encode_best(f->pixels, npix, minCode, &clen);
+        }
         if (!codes)
         {
             fclose(fp);

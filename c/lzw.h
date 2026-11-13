@@ -37,5 +37,10 @@ long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *o
 
 /* Encode pixel indices (each < 2^minCodeSize) as GIF LZW codes. Returns a malloc'd buffer. */
 uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen);
+/* deferClear 0: send a Clear when the table reaches 4096 (Writegif's rule); 1: keep coding with the
+   full table and add nothing ("deferred clear", legal GIF: decoders must handle it). */
+uint8_t *lzw_gif_encode_mode(const uint8_t *in, size_t inlen, int minCodeSize, int deferClear, size_t *outlen);
+/* Both ways, the shorter one. */
+uint8_t *lzw_gif_encode_best(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen);
 
 #endif

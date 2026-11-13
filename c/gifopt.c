@@ -239,7 +239,7 @@ static long try_cut(Opt *o, const uint8_t *T, const uint8_t *P, int L, int Tp, i
                 px[(size_t) y * W + x] = (uint8_t) (o->global ? ch_get(&o->gmap, RGB(T + k)) : ch_get(&local, RGB(T + k)));
         }
     bits = bits_of(ncol);
-    codes = lzw_gif_encode(px, (size_t) W * H, bits < 2 ? 2 : bits, &clen);
+    codes = lzw_gif_encode_best(px, (size_t) W * H, bits < 2 ? 2 : bits, &clen);
     if (!codes)
     {
         free(px);

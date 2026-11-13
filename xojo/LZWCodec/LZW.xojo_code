@@ -263,9 +263,10 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 	#tag EndMethod
 
 	#tag Method, Flags = &h0
-		Function GIFEncode(inp As MemoryBlock, n As Integer, minCodeSize As Integer) As MemoryBlock
+		Function GIFEncode(inp As MemoryBlock, n As Integer, minCodeSize As Integer, deferClear As Boolean = False) As MemoryBlock
 		  // GIF LZW (Brian's lzw::write and bitstream::write, Writegif 1998-99) without the sub-blocks:
-		  // the width grows in put() once the table has passed 2^n entries; Clear when it reaches 4096.
+		  // the width grows in put() once the table has passed 2^n entries; Clear when it reaches 4096,
+		  // or with deferClear, keep coding with the full table and add nothing (legal GIF).
 		  #Pragma DisableBackgroundTasks
 		  If minCodeSize < 2 Or minCodeSize > 8 Then Return Nil
 		  Const kHSize = 9001
@@ -300,7 +301,9 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 		    End If
 		    If nEntries > Bitwise.ShiftLeft(1, codeSize) Then codeSize = codeSize + 1 // put(current.prefix)
 		    GIFPut(out, o, accume, bitsInAccume, prefix, codeSize)
-		    If nEntries = kTable Then // table full: Clear and start again
+		    If nEntries = kTable And deferClear Then
+		      // table full, deferred clear: keep using it
+		    ElseIf nEntries = kTable Then // table full: Clear and start again
 		      If nEntries > Bitwise.ShiftLeft(1, codeSize) Then codeSize = codeSize + 1
 		      GIFPut(out, o, accume, bitsInAccume, clearCode, codeSize)
 		      For i As Integer = 0 To kHSize - 1
@@ -324,6 +327,17 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 		  If bitsInAccume > 0 Then GIFPut(out, o, accume, bitsInAccume, 0, 8 - bitsInAccume)
 		  out.Size = o
 		  Return out
+		End Function
+	#tag EndMethod
+
+	#tag Method, Flags = &h0
+		Function GIFEncodeBest(inp As MemoryBlock, n As Integer, minCodeSize As Integer) As MemoryBlock
+		  // Clear when the table is full, or deferred clear: whichever is shorter (as lzw_gif_encode_best)
+		  Var a As MemoryBlock = GIFEncode(inp, n, minCodeSize, False)
+		  If a = Nil Or a.Size < 4096 Then Return a // the table never filled: both ways are the same
+		  Var b As MemoryBlock = GIFEncode(inp, n, minCodeSize, True)
+		  If b <> Nil And b.Size < a.Size Then Return b
+		  Return a
 		End Function
 	#tag EndMethod
 

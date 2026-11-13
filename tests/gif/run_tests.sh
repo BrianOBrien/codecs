@@ -47,6 +47,17 @@ for f in $OUT/src/*.gif; do
       dc=$(compare $OUT/$n.ff.raw $OUT/$n.copyff.raw)
       [ "$dc" = 0 ] || msg="$msg copy decodes differently: $dc px;"
     else msg="$msg copy failed: $(cat $OUT/$n.err)"; fi
+    # both LZW table-full rules, forced: ffmpeg and Pillow must decode each copy like the source
+    if [[ $n != winfli* ]]; then
+      for mode in clear defer; do
+        if GIF_LZW_MODE=$mode $GT copy $f $OUT/$n.$mode.gif 2>$OUT/$n.err; then
+          ffmpeg_rgba $OUT/$n.$mode.gif $OUT/$n.$mode.ff.raw
+          d1=$(compare $OUT/$n.ff.raw $OUT/$n.$mode.ff.raw)
+          pillow_rgba $OUT/$n.$mode.gif $OUT/$n.$mode.pil.raw 2>/dev/null && d2=$(compare $OUT/$n.ours.raw $OUT/$n.$mode.pil.raw) || d2="unreadable"
+          [ "$d1" = 0 ] && [ "$d2" = 0 ] || msg="$msg $mode copy differs (ffmpeg $d1, Pillow $d2);"
+        else msg="$msg $mode copy failed;"; fi
+      done
+    fi
   fi
   frames=$(python3 -c "from PIL import Image; print(getattr(Image.open('$f'),'n_frames',1))" 2>/dev/null || echo 1)
   if [ -z "$msg" ]; then pass=$((pass+1)); printf "PASS  %-16s %2s frame(s): ffmpeg and Pillow agree pixel for pixel; copy decodes the same %s\n" $n $frames "$note"

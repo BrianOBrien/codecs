@@ -101,7 +101,11 @@ Protected Class GIFFile
 		  
 		      Var minCode As Integer = g.Get8
 		      Var codes As MemoryBlock = g.ReadSubBlocks
-		      If g.mBad Or codes = Nil Or f.Width <= 0 Or f.Height <= 0 Then
+		      If codes = Nil Or f.Width <= 0 Or f.Height <= 0 Then
+		        g.mBad = True
+		        Exit While
+		      End If
+		      If g.mBad And codes.Size = 0 Then
 		        g.mBad = True
 		        Exit While
 		      End If
@@ -118,6 +122,10 @@ Protected Class GIFFile
 		        f.Pixels.StringValue(y * f.Width, f.Width) = tmp.StringValue(row * f.Width, f.Width)
 		      Next
 		      g.Frames.Add(f)
+		      If g.mBad Then // the file was cut short in this image: keep it, stop
+		        g.Truncated = True
+		        Exit While
+		      End If
 		    Else
 		      Exit While // unknown block: keep what we have
 		    End If
@@ -262,15 +270,19 @@ Protected Class GIFFile
 		    End If
 		    Var bits As Integer = BitsFor(ncol)
 		    Var minCode As Integer = Max(2, bits) // GIF needs at least 2
-		    bs.WriteUInt8(&h21) // graphic control extension
-		    bs.WriteUInt8(&hF9)
-		    bs.WriteUInt8(4)
-		    Var pk As Integer = Bitwise.ShiftLeft(f.Disposal And 7, 2)
-		    If f.Transparent >= 0 Then pk = pk Or 1
-		    bs.WriteUInt8(pk)
-		    bs.WriteUInt16(f.Delay)
-		    bs.WriteUInt8(Max(0, f.Transparent))
-		    bs.WriteUInt8(0)
+		    // graphic control extension; left out when it says nothing (no transparency, no delay,
+		    // disposal 0 or 1, which both leave the frame in place)
+		    If f.Transparent >= 0 Or f.Delay > 0 Or f.Disposal > 1 Then
+		      bs.WriteUInt8(&h21)
+		      bs.WriteUInt8(&hF9)
+		      bs.WriteUInt8(4)
+		      Var pk As Integer = Bitwise.ShiftLeft(f.Disposal And 7, 2)
+		      If f.Transparent >= 0 Then pk = pk Or 1
+		      bs.WriteUInt8(pk)
+		      bs.WriteUInt16(f.Delay)
+		      bs.WriteUInt8(Max(0, f.Transparent))
+		      bs.WriteUInt8(0)
+		    End If
 		    bs.WriteUInt8(&h2C) // image descriptor, never interlaced on output
 		    bs.WriteUInt16(f.Left)
 		    bs.WriteUInt16(f.Top)
@@ -283,7 +295,15 @@ Protected Class GIFFile
 		      bs.WriteUInt8(0)
 		    End If
 		    bs.WriteUInt8(minCode)
-		    Var codes As MemoryBlock = LZW.GIFEncode(f.Pixels, f.Width * f.Height, minCode)
+		    Var codes As MemoryBlock
+		    Var mode As String = System.EnvironmentVariable("GIF_LZW_MODE") // forces one rule, for the tests
+		    If mode = "clear" Then
+		      codes = LZW.GIFEncode(f.Pixels, f.Width * f.Height, minCode, False)
+		    ElseIf mode = "defer" Then
+		      codes = LZW.GIFEncode(f.Pixels, f.Width * f.Height, minCode, True)
+		    Else
+		      codes = LZW.GIFEncodeBest(f.Pixels, f.Width * f.Height, minCode)
+		    End If
 		    Var p As Integer = 0
 		    While p < codes.Size // sub-blocks of up to 255 bytes
 		      Var k As Integer = Min(255, codes.Size - p)
@@ -364,13 +384,14 @@ Protected Class GIFFile
 		  Do
 		    Var size As Integer = Get8
 		    If size = 0 Or mBad Then Exit Do
-		    If mPos + size > mData.Size Then
+		    If mPos + size > mData.Size Then // file cut short: keep what is there
+		      size = mData.Size - mPos
 		      mBad = True
-		      Exit Do
 		    End If
 		    parts.Add(mData.StringValue(mPos, size))
 		    total = total + size
 		    mPos = mPos + size
+		    If mBad Then Exit Do
 		  Loop
 		  Var mb As New MemoryBlock(total)
 		  Var p As Integer = 0
@@ -402,6 +423,10 @@ Protected Class GIFFile
 
 	#tag Property, Flags = &h0
 		Frames() As GIFFrame
+	#tag EndProperty
+
+	#tag Property, Flags = &h0
+		Truncated As Boolean
 	#tag EndProperty
 
 	#tag Property, Flags = &h0

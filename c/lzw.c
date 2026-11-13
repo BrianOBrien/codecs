@@ -373,7 +373,7 @@ static int gbs_write(bitstream *bs, int code, int nbits)
     return 1;
 }
 
-uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen)
+uint8_t *lzw_gif_encode_mode(const uint8_t *in, size_t inlen, int minCodeSize, int deferClear, size_t *outlen)
 {
     static int32_t htab[HSIZE];
     static int16_t codetab[HSIZE];
@@ -416,7 +416,10 @@ uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t
             continue;
         }
         PUT(prefix);                              /* put(current.prefix) */
-        if (nEntries == LZW_TABLE)                /* table full: Clear and start again */
+        if (nEntries == LZW_TABLE && deferClear)  /* table full: keep using it, add nothing */
+        {
+        }
+        else if (nEntries == LZW_TABLE)           /* table full: Clear and start again */
         {
             PUT(clearCode);
             for (i = 0; i < HSIZE; ++i)
@@ -443,4 +446,30 @@ uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t
 fail:
     free(bs.out);
     return NULL;
+}
+
+uint8_t *lzw_gif_encode(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen)
+{
+    return lzw_gif_encode_mode(in, inlen, minCodeSize, 0, outlen);
+}
+
+uint8_t *lzw_gif_encode_best(const uint8_t *in, size_t inlen, int minCodeSize, size_t *outlen)
+{
+    size_t la, lb;
+    uint8_t *a = lzw_gif_encode_mode(in, inlen, minCodeSize, 0, &la), *b;
+    if (!a || la < 4096)                         /* the table never filled: both ways are the same */
+    {
+        *outlen = la;
+        return a;
+    }
+    b = lzw_gif_encode_mode(in, inlen, minCodeSize, 1, &lb);
+    if (b && lb < la)
+    {
+        free(a);
+        *outlen = lb;
+        return b;
+    }
+    free(b);
+    *outlen = la;
+    return a;
 }
