@@ -181,7 +181,7 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 		  // when the table reaches 2^n (no early change). inp holds the code bytes with the sub-blocks removed.
 		  // Returns the bytes written to out, or -1 on corrupt data.
 		  #Pragma DisableBackgroundTasks
-		  If minCodeSize < 2 Or minCodeSize > 8 Then Return -1
+		  If minCodeSize < 1 Or minCodeSize > 8 Then Return -1 // 1 is not legal GIF, but WinFLI's 1998 writer used it for 2-colour images
 		  Var clearCode As Integer = Bitwise.ShiftLeft(1, minCodeSize)
 		  Var eofCode As Integer = clearCode + 1
 		  Var prefix(4095) As Integer
@@ -222,6 +222,7 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 		      End If
 		      c = newCode
 		      oldCode = newCode
+		      If nEntries >= Bitwise.ShiftLeft(1, codeSize) And codeSize < 12 Then codeSize = codeSize + 1 // code size 1: the table starts full (as ffmpeg)
 		      Continue Do
 		    End If
 		    Var sp As Integer = -1
@@ -253,8 +254,8 @@ bit first, no early change, Clear = 2^minCodeSize; the 255-byte sub-blocks are h
 		      prefix(nEntries) = oldCode
 		      ch(nEntries) = c
 		      nEntries = nEntries + 1
-		      If nEntries + 1 > Bitwise.ShiftLeft(1, codeSize) And codeSize < 12 Then codeSize = codeSize + 1
 		    End If
+		    If nEntries >= Bitwise.ShiftLeft(1, codeSize) And codeSize < 12 Then codeSize = codeSize + 1 // checked after every code
 		    oldCode = newCode
 		  Loop
 		  Return nout

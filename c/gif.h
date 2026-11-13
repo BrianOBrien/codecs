@@ -7,6 +7,8 @@
  *   - 1-bit images need an LZW code size of 2, not 1;
  *   - the colour table size in the packed fields now matches what is written;
  *   - unknown extensions are skipped instead of ending the program;
+ *   - binary images the old writer saved with LZW code size 1 (illegal, rejected by Pillow and
+ *     others) are still read, as ffmpeg does;
  *   - frames are kept with their own rectangle, palette, delay, disposal and transparency,
  *     and gif_composite renders them the way a viewer shows them.
  */

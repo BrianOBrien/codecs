@@ -32,6 +32,8 @@ def true_1bit(path, w, h):
            + b'\x2c' + struct.pack('<HHHHB', 0, 0, w, h, 0) + bytes([2]) + blocks + b'\x00\x3b')
     open(path, 'wb').write(gif)
 true_1bit(f'{out}/onebit.gif', 61, 43)                                # 2 colours: code size 2
+import subprocess
+subprocess.run([sys.executable, '../../demo/old_writer_1bit.py', '../geotiff/map.png', f'{out}/winfli98_1bit.gif'], check=True, capture_output=True)   # WinFLI's code size 1
 base.quantize(64).save(f'{out}/interlaced.gif', interlace=True)
 base.resize((7, 5)).quantize(8).save(f'{out}/tiny.gif')               # odd sizes, short data
 

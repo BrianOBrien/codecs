@@ -268,8 +268,8 @@ long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *o
     int clearCode, eofCode, nEntries, codeSize, old_code = -1, new_code;
     uint8_t C = 0;
 
-    if (minCodeSize < 2 || minCodeSize > 8)
-        return -1;
+    if (minCodeSize < 1 || minCodeSize > 8)      /* 1 is not legal GIF, but WinFLI's 1998 writer */
+        return -1;                               /* used it for 2-colour images: read it anyway */
     clearCode = 1 << minCodeSize;
     eofCode = clearCode + 1;
     nEntries = clearCode + 2;
@@ -311,6 +311,8 @@ long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *o
                 out[nout++] = (uint8_t) new_code;
             C = (uint8_t) new_code;
             old_code = new_code;
+            if (nEntries >= (1 << codeSize) && codeSize < LZW_MAXBITS)
+                codeSize++;                      /* code size 1: the table starts full (as ffmpeg) */
             continue;
         }
         if (new_code < nEntries)
@@ -341,9 +343,9 @@ long lzw_gif_decode(const uint8_t *in, size_t inlen, int minCodeSize, uint8_t *o
             table[nEntries].prefix = (int16_t) old_code;
             table[nEntries].c = C;
             nEntries++;
-            if (nEntries + 1 > (1 << codeSize) && codeSize < LZW_MAXBITS)
-                codeSize++;
         }
+        if (nEntries >= (1 << codeSize) && codeSize < LZW_MAXBITS)   /* Brian's (nEntries+1) > 2^n, */
+            codeSize++;                          /* checked after every code, not only after an add */
         old_code = new_code;
     }
     return (long) nout;
