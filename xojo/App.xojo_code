@@ -169,6 +169,23 @@ Inherits ConsoleApplication
 		    End If
 		    Return 0
 		  End If
+		  If args.Count = 5 And args(2) = "optimize-raw" Then // GIFOptimizer output as is (no size check)
+		    Var g As GIFFile = GIFFile.Read(FullPath(args(3)), err)
+		    If g = Nil Then
+		      StdErr.WriteLine("xgt gif: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    Var o As GIFFile = GIFOptimizer.Optimize(g, err)
+		    If o = Nil Then
+		      StdErr.WriteLine("xgt gif: optimize " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    If Not o.Write(FullPath(args(4)), err) Then
+		      StdErr.WriteLine("xgt gif: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
 		  If args.Count = 5 And args(2) = "-rgba" Then
 		    Var g As GIFFile = GIFFile.Read(FullPath(args(4)), err)
 		    If g = Nil Then
