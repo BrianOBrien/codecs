@@ -24,6 +24,7 @@ test: gtinfo gtcopy giftool flitool
 test-xojo: gtinfo gtcopy
 	cd ../tests/geotiff && GT=../../xojo/xgt.sh ./run_tests.sh && CP="../../xojo/xgt.sh copy" ./run_write_tests.sh
 	cd ../tests/gif && GT="../../xojo/xgt.sh gif" ./run_tests.sh
+	cd ../tests/fli && FT="../../xojo/xgt.sh fli" ./run_tests.sh
 
 clean:
 	rm -f gtinfo gtcopy giftool flitool

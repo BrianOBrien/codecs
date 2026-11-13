@@ -28,13 +28,13 @@ Protected Class GIFFile
 		    Return Nil
 		  End If
 		  Var sig As String = data.StringValue(0, 6)
-		  If sig <> "GIF87a" And sig <> "GIF89a" Then
+		  If StrComp(sig, "GIF87a", 0) <> 0 And StrComp(sig, "GIF89a", 0) <> 0 Then // exact, not case-blind
 		    err = "not a GIF file"
 		    Return Nil
 		  End If
 		  data.LittleEndian = True
 		  Var g As New GIFFile
-		  g.Version89 = (sig = "GIF89a")
+		  g.Version89 = (StrComp(sig, "GIF89a", 0) = 0)
 		  g.LoopCount = -1
 		  g.mData = data
 		  g.mPos = 6
@@ -67,7 +67,7 @@ Protected Class GIFFile
 		      ElseIf extLabel = &hFF Then // application: NETSCAPE2.0 loop count
 		        Var bsz As Integer = g.Get8
 		        Var netscape As Boolean = (bsz = 11 And g.mPos + 11 <= data.Size)
-		        If netscape Then netscape = (data.StringValue(g.mPos, 11) = "NETSCAPE2.0")
+		        If netscape Then netscape = (StrComp(data.StringValue(g.mPos, 11), "NETSCAPE2.0", 0) = 0)
 		        g.mPos = g.mPos + bsz
 		        Var d As MemoryBlock = g.ReadSubBlocks
 		        If netscape And d <> Nil And d.Size >= 3 Then

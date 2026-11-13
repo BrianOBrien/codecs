@@ -17,11 +17,11 @@ fi
 if ! pgrep -x Xojo >/dev/null; then
   (cd /opt/xojo2026r3.1_arm64 && setsid ./Xojo "$PROJ" >/dev/null 2>&1 &)
 fi
-until xwininfo -root -tree 2>/dev/null | grep -q -e '"Xojo - \[' -e '"Missing'; do sleep 2; done; sleep 6
+for i in $(seq 1 60); do xwininfo -root -tree 2>/dev/null | grep -q -e '"Xojo - \[' -e '"Missing' && break; sleep 2; done; sleep 6   # project window: up to 2 min
 if xwininfo -root -tree | grep -q '"Missing'; then echo "LOAD FAILED (Missing Files)"; exit 1; fi
-until [ -S /tmp/XojoIDE ] && ss -xl | grep -q /tmp/XojoIDE; do sleep 2; done; sleep 3   # scripting socket ready
+for i in $(seq 1 30); do [ -S /tmp/XojoIDE ] && ss -xl | grep -q /tmp/XojoIDE && break; sleep 2; done; sleep 3   # scripting socket: up to 1 min
 before=$(stat -c %Y "$B" 2>/dev/null || echo 0)
-python3 $X 'DoCommand("BuildApp")' 150 >/dev/null
+python3 $X 'DoCommand("BuildApp")' 60 >/dev/null   # returns when the build ends, or after 1 min
 for i in $(seq 1 40); do now=$(stat -c %Y "$B" 2>/dev/null || echo 0); [ "$now" != "$before" ] && [ "$now" != 0 ] && break; sleep 3; done
 pkill -f 'pcmanfm /home/brian/dev/[F]lightOverview/Builds|pcmanfm /home/brian/dev/[g]eotiff/xojo/Builds'
 now=$(stat -c %Y "$B" 2>/dev/null || echo 0)

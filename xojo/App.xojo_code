@@ -10,13 +10,116 @@ Inherits ConsoleApplication
 		  //   xgt [-raw out.raw] file.tif    summary; -raw also writes the decoded pixels
 		  //   xgt copy [-c none|lzw|packbits] [-p] [-rows N] in.tif out.tif
 		  //   xgt gif file.gif | xgt gif -rgba out.raw file.gif | xgt gif copy in.gif out.gif
+		  //   xgt fli file.fli | xgt fli -rgba out.raw file.fli | xgt fli copy in.fli out.flc | xgt fli pattern out.flc W H N
 		  If args.Count >= 2 Then
 		    If args(1) = "copy" Then Return DoCopy(args)
 		    If args(1) = "gif" Then Return DoGIF(args)
+		    If args(1) = "fli" Then Return DoFLI(args)
 		  End If
 		  Return DoInfo(args)
 		End Function
 	#tag EndEvent
+
+	#tag Method, Flags = &h0
+		Function DoFLI(args() As String) As Integer
+		  // The jobs of the C flitool
+		  Var err As String
+		  If args.Count = 5 And args(2) = "copy" Then
+		    Var f As FLIFile = FLIFile.Read(FullPath(args(3)), err)
+		    If f = Nil Then
+		      StdErr.WriteLine("xgt fli: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    If Not f.WriteFLC(FullPath(args(4)), err) Then
+		      StdErr.WriteLine("xgt fli: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
+		  If args.Count = 7 And args(2) = "pattern" Then // the same test animation as flitool pattern
+		    Var p As New FLIFile
+		    Var w As Integer = args(4).ToInteger
+		    Var h As Integer = args(5).ToInteger
+		    Var n As Integer = args(6).ToInteger
+		    p.Type = FLIFile.kFLCMagic
+		    p.Width = w
+		    p.Height = h
+		    p.DelayMs = 50
+		    Var seed As UInt32 = 12345
+		    For i As Integer = 0 To n - 1
+		      Var fr As New FLIFrame
+		      fr.Palette = New MemoryBlock(768)
+		      For k As Integer = 0 To 255
+		        fr.Palette.Byte(3 * k) = (k + 40 * (i \ 5)) And 255
+		        fr.Palette.Byte(3 * k + 1) = 255 - k
+		        fr.Palette.Byte(3 * k + 2) = (k * 7 + i \ 5) And 255
+		      Next
+		      fr.Pixels = New MemoryBlock(w * h)
+		      For y As Integer = 0 To h - 1
+		        For x As Integer = 0 To w - 1
+		          Var v As Integer = 200
+		          If ((x \ 16 + y \ 16) And 1) = 1 Then v = 10
+		          If x > 5 + 7 * i And x < 60 + 7 * i And y > 20 And y < 90 Then v = 100 + (x + y) Mod 3
+		          If y = h \ 2 And (x * 31 + i) Mod 5 = 0 Then v = (x * 13 + i) And 255
+		          If x = w - 1 And (y + i) Mod 4 = 0 Then v = i And 255
+		          fr.Pixels.Byte(y * w + x) = v
+		        Next
+		      Next
+		      For k As Integer = 0 To 39
+		        seed = seed * 1103515245 + 12345
+		        fr.Pixels.Byte((Bitwise.ShiftRight(seed, 8)) Mod (w * h)) = Bitwise.ShiftRight(seed, 24) And 255
+		      Next
+		      p.Frames.Add(fr)
+		    Next
+		    If Not p.WriteFLC(FullPath(args(3)), err) Then
+		      StdErr.WriteLine("xgt fli: " + args(3) + ": " + err)
+		      Return 1
+		    End If
+		    Return 0
+		  End If
+		  If args.Count = 5 And args(2) = "-rgba" Then
+		    Var f As FLIFile = FLIFile.Read(FullPath(args(4)), err)
+		    If f = Nil Then
+		      StdErr.WriteLine("xgt fli: " + args(4) + ": " + err)
+		      Return 1
+		    End If
+		    Try
+		      Var bs As BinaryStream = BinaryStream.Create(New FolderItem(FullPath(args(3)), FolderItem.PathModes.Native), True)
+		      Var npix As Integer = f.Width * f.Height
+		      Var rgba As New MemoryBlock(npix * 4)
+		      For Each fr As FLIFrame In f.Frames
+		        For k As Integer = 0 To npix - 1
+		          Var idx As Integer = fr.Pixels.Byte(k)
+		          rgba.Byte(4 * k) = fr.Palette.Byte(3 * idx)
+		          rgba.Byte(4 * k + 1) = fr.Palette.Byte(3 * idx + 1)
+		          rgba.Byte(4 * k + 2) = fr.Palette.Byte(3 * idx + 2)
+		          rgba.Byte(4 * k + 3) = 255
+		        Next
+		        bs.Write(rgba.StringValue(0, rgba.Size))
+		      Next
+		      bs.Close
+		    Catch e As RuntimeException
+		      StdErr.WriteLine("xgt fli: cannot write " + args(3))
+		      Return 1
+		    End Try
+		    Return 0
+		  End If
+		  If args.Count = 3 Then
+		    Var f As FLIFile = FLIFile.Read(FullPath(args(2)), err)
+		    If f = Nil Then
+		      StdErr.WriteLine("xgt fli: " + args(2) + ": " + err)
+		      Return 1
+		    End If
+		    Var kind As String = "FLC"
+		    If f.Type = FLIFile.kFLIMagic Then kind = "FLI"
+		    Print("File: " + args(2) + " (" + kind + ")")
+		    Print("Size: " + f.Width.ToString + " x " + f.Height.ToString + ", " + f.Frames.Count.ToString + " frame(s), " + f.DelayMs.ToString + " ms per frame")
+		    Return 0
+		  End If
+		  StdErr.WriteLine("usage: xgt fli file.fli | -rgba out.raw file.fli | copy in.fli out.flc | pattern out.flc W H N")
+		  Return 2
+		End Function
+	#tag EndMethod
 
 	#tag Method, Flags = &h0
 		Function DoGIF(args() As String) As Integer

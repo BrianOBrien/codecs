@@ -23,7 +23,7 @@ in their own repos and copy in, or link to, only the Xojo folders they need.
 | PackBits | in `c/geotiff.c`, `c/gtwrite.c` | `xojo/PackBitsCodec` | decode + encode |
 | TIFF / GeoTIFF | `c/geotiff.c`, `c/gtwrite.c` | `xojo/TIFFCodec` | read + write |
 | GIF (with GIF-flavour LZW) | `c/gif.c`, `c/lzw.c` | `xojo/GIFCodec`, `LZW.GIFDecode/GIFEncode` | read, composite, write |
-| FLI / FLC | `c/fli.c` | next | read FLI + FLC, write FLC |
+| FLI / FLC | `c/fli.c` | `xojo/FLICodec` | read FLI + FLC, write FLC |
 
 History: this repo started as [geotiff](https://github.com/BrianOBrien/geotiff), whose commits it
 keeps. The code grew from Brian O'Brien's `rast2tif.c` / `tiff.h` (2000) and his GIF LZW
@@ -76,7 +76,12 @@ Tests (`tests/fli/`): ten real FLI/FLC files from Brian's drive (3D Studio 3 and
 fetched from the WD into `tests/fli/corpus/`, not committed), 516 frames: every frame equals ffmpeg's
 decoder pixel for pixel (one file, which ffmpeg refuses, is checked through its copy). Each is copied as
 an FLC with our writer and must decode the same in ffmpeg and in our reader; so must generated patterns
-of 640x203, 641x203, 2x300 and 1x1. 140 damaged files: no crash.
+of 640x203, 641x203, 2x300 and 1x1. 140 damaged files: no crash. C and Xojo both pass, and their FLC
+copies of all 14 test files are byte-identical. Xojo: `FLIFile.Read(path, err)`, `.Frames()`, `.WriteFLC(path, err)`;
+the test app runs it as `xgt fli ...`.
+
+A Xojo trap met on the way: `=` and `<>` on Strings ignore case, so binary data (pixel rows,
+palettes, signatures) must be compared with `StrComp(a, b, 0)`.
 
 ## TIFF / GeoTIFF
 Reads classic TIFF (II or MM), strips or tiles, uncompressed, LZW, Deflate or PackBits, horizontal
