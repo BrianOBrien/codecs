@@ -9,7 +9,8 @@ Protected Module GIFOptimizer
 		256 colours or fewer, else a small local palette per frame; identical frames are merged (their
 		delays added); disposal 2 is used when pixels must go back to transparent.
 
-		Optimize(g, err) returns a new GIFFile, or Nil with err set.
+		Optimize(g, err) returns a new GIFFile, or Nil with err set. After it, SourceToFrame(i) is the
+		output frame that shows source frame i (frames merged into the one before share its number).
 	#tag EndNote
 
 	#tag Method, Flags = &h0
@@ -23,6 +24,7 @@ Protected Module GIFOptimizer
 		  End If
 		  mW = src.Width
 		  mH = src.Height
+		  SourceToFrame.RemoveAll
 		  Var n As Integer = mW * mH * 4
 
 		  // pass 1: every colour shown; one global palette if there are 256 or fewer
@@ -122,6 +124,7 @@ Protected Module GIFOptimizer
 		        Next
 		        If Not changed Then // identical to the last frame: merge
 		          last.Delay = last.Delay + src.Frames(i).Delay
+		          SourceToFrame.Add(g.Frames.LastIndex)
 		          Continue For
 		        End If
 		      End If
@@ -134,6 +137,7 @@ Protected Module GIFOptimizer
 		    f.Delay = src.Frames(i).Delay
 		    f.Disposal = 1
 		    g.Frames.Add(f)
+		    SourceToFrame.Add(g.Frames.LastIndex)
 		    Pprev.StringValue(0, n) = P.StringValue(0, n)
 		    Tprev.StringValue(0, n) = T.StringValue(0, n)
 		  Next
@@ -322,6 +326,10 @@ Protected Module GIFOptimizer
 
 	#tag Property, Flags = &h21
 		Private mW As Integer
+	#tag EndProperty
+
+	#tag Property, Flags = &h1
+		Protected SourceToFrame() As Integer
 	#tag EndProperty
 
 
